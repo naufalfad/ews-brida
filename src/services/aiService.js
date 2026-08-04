@@ -100,6 +100,10 @@ ${formattedArticles}`;
                         type: 'string',
                         description: 'Penjelasan mengapa berita ini berpotensi memicu kerusuhan'
                       },
+                      triangulation_group: {
+                        type: 'string',
+                        description: 'Nama/Label grup isu yang sama (misal: "Antrean BBM SPBU Komodo", "Pilkada Mimika 2026")'
+                      },
                       supporting_sources: {
                         type: 'array',
                         items: {
@@ -131,6 +135,7 @@ ${formattedArticles}`;
                       'source',
                       'url',
                       'potential_chaos_explanation',
+                      'triangulation_group',
                       'supporting_sources'
                     ],
                     additionalProperties: false

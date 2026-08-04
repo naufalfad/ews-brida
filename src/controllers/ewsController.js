@@ -132,35 +132,34 @@ export const processNews = async (req, res) => {
  */
 export const runRegionalAnalysis = async (req, res) => {
   try {
-    // Hanya ambil berita dengan kredibilitas tinggi (Skor >= 50)
-    const { minCredibility = 50, limit = 10 } = req.body;
+    const { triangulationGroup } = req.body;
 
-    console.log(`[Fase 2] Mengambil berita dengan kredibilitas >= ${minCredibility} untuk analisis dampak...`);
+    if (!triangulationGroup) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter triangulationGroup wajib disertakan.',
+      });
+    }
 
-    const scoredArticles = await prisma.rawArticle.findMany({
+    console.log(`[Fase 2] Mengambil berita terverifikasi untuk kelompok isu: "${triangulationGroup}"...`);
+
+    // Ambil berita yang berada dalam triangulationGroup tersebut
+    const credibleArticles = await prisma.rawArticle.findMany({
       where: {
+        triangulationGroup: triangulationGroup,
         credibilityScore: {
-          gte: parseFloat(minCredibility)
+          gte: 50.0 // Hanya berita valid/lolos EWS
         }
       },
       orderBy: {
         createdAt: 'desc',
-      },
-      take: parseInt(limit, 10) * 3, // Mengambil lebih banyak untuk kompensasi penyaringan relevansi
+      }
     });
 
-    // Saring hanya artikel yang ditandai RELEVAN dengan EWS (isRelevantToEws === true)
-    const credibleArticles = scoredArticles
-      .filter(a => {
-        const factors = a.credibilityFactors;
-        return factors && factors.isRelevantToEws === true;
-      })
-      .slice(0, parseInt(limit, 10));
-
     if (credibleArticles.length === 0) {
-      return res.status(400).json({
+      return res.status(404).json({
         success: false,
-        message: `Tidak menemukan berita kredibel dan relevan EWS dengan skor >= ${minCredibility}. Jalankan Fase 1 terlebih dahulu atau pastikan ada isu potensial keamanan.`,
+        message: `Tidak menemukan berita terverifikasi untuk kelompok isu: "${triangulationGroup}". Pastikan isu sudah ditarik di Fase 1.`,
       });
     }
 
@@ -223,13 +222,13 @@ export const runRegionalAnalysis = async (req, res) => {
         userId: req.headers['x-user-id'] || 'SYSTEM_BRIDA',
         actionType: 'GENERATE_ANALYSIS',
         analysisId: newAnalysis.id,
-        notes: `Membuat analisis dampak wilayah untuk batch ${batchId}. Risiko: ${analysis.risk_level}.`,
+        notes: `Membuat analisis dampak wilayah untuk kelompok isu "${triangulationGroup}". Risiko: ${analysis.risk_level}.`,
       }
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Analisis dampak wilayah terhadap RKPD selesai dibuat.',
+      message: `Analisis dampak wilayah untuk kelompok isu "${triangulationGroup}" selesai dibuat.`,
       data: newAnalysis
     });
   } catch (error) {
