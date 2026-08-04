@@ -1,0 +1,67 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model RawArticle {
+  id                 String   @id @default(uuid()) @db.Uuid
+  sourceName         String   @map("source_name") @db.VarChar(255)
+  sourceType         String   @map("source_type") @db.VarChar(100)
+  title              String   @db.VarChar(500)
+  content            String   @db.Text
+  url                String   @db.Text
+  publishedAt        DateTime @map("published_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  
+  // Fields for Credibility and Triangulation
+  credibilityScore   Float?   @map("credibility_score")
+  credibilityFactors Json?    @map("credibility_factors") // Stores individual S, T, C details
+  triangulationGroup String?  @map("triangulation_group") @db.VarChar(100)
+
+  @@map("raw_articles")
+}
+
+model EwsAnalysis {
+  id                 String     @id @default(uuid()) @db.Uuid
+  batchId            String     @map("batch_id") @db.Uuid
+  riskLevel          String     @map("risk_level") @db.VarChar(50) // 'AMAN', 'WASPADA', 'KRITIS/MERAH'
+  primaryCategory    String     @map("primary_category") @db.VarChar(100)
+  targetDistrict     String     @map("target_district") @db.VarChar(255)
+  summary            String     @db.Text
+  predictedImpact    String     @map("predicted_impact") @db.Text
+  recommendedActions Json       @map("recommended_actions") // JSONB
+  responsibleOpd     String     @map("responsible_opd") @db.VarChar(255)
+  isHoaxPotential    Boolean    @map("is_hoax_potential")
+  rawAiResponse      Json       @map("raw_ai_response") // JSONB
+  sourceRefs         Json?      @map("source_refs") // optional array of source article metadata
+  createdAt          DateTime   @default(now()) @map("created_at")
+  AuditLogs          AuditLog[]
+
+  @@map("ews_analyses")
+}
+
+model SystemBaseline {
+  id            String   @id @default(uuid()) @db.Uuid
+  category      String   @unique @db.VarChar(100)
+  baselineValue String   @map("baseline_value") @db.Text
+  description   String   @db.Text
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("system_baselines")
+}
+
+model AuditLog {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @map("user_id") @db.VarChar(255)
+  actionType String       @map("action_type") @db.VarChar(100)
+  analysisId String?      @map("analysis_id") @db.Uuid
+  analysis   EwsAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+  notes      String       @db.Text
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}

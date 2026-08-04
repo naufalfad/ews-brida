@@ -1,0 +1,40 @@
+{
+  "name": "ews-be",
+  "version": "1.0.0",
+  "description": "Backend foundation for Early Warning System (EWS) BRIDA Kabupaten Mimika",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "keywords": [
+    "ews",
+    "brida",
+    "mimika",
+    "express",
+    "prisma",
+    "openai"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^5.18.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "openai": "^4.55.0",
+    "pdfkit": "^0.19.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4",
+    "prisma": "^5.18.0"
+  }
+}
