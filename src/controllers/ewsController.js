@@ -2,111 +2,125 @@ import crypto from 'crypto';
 import prisma from '../config/prisma.js';
 import aiService from '../services/aiService.js';
 import pdfService from '../services/pdfService.js';
+import searchService from '../services/searchService.js';
 
 /**
- * FASE 1: Menilai kredibilitas berita dan melakukan grup triangulasi
+ * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan live penelusuran internet
  * POST /api/v1/ews/process-news
  */
 export const processNews = async (req, res) => {
   try {
-    const { limit = 10 } = req.body;
+    console.log(`[Fase 1] Memulai pencarian berita terkini Mimika langsung dari internet...`);
 
-    console.log(`[Fase 1] Mengambil ${limit} berita mentah teratas untuk penilaian kredibilitas...`);
+    // 1. Ambil berita real-time dari internet menggunakan searchService (Google News RSS)
+    const liveArticles = await searchService.searchMimikaNews();
 
-    // Ambil berita terbaru (prioritaskan yang belum memiliki skor kredibilitas)
-    let rawArticles = await prisma.rawArticle.findMany({
-      where: {
-        credibilityScore: null
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: parseInt(limit, 10),
-    });
-
-    // Jika yang belum diproses kosong, ambil berita terbaru secara umum untuk demo/testing
-    if (rawArticles.length === 0) {
-      console.log('[Fase 1] Semua berita sudah dinilai. Mengambil berita terbaru secara umum...');
-      rawArticles = await prisma.rawArticle.findMany({
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: parseInt(limit, 10),
-      });
-    }
-
-    if (rawArticles.length === 0) {
+    if (liveArticles.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Tidak ada berita mentah (raw_articles) di database. Hubungkan scraper Anda terlebih dahulu.',
+        message: 'Gagal mengambil berita terkini dari internet. Silakan coba beberapa saat lagi.',
       });
     }
 
-    // Panggil AI untuk mengevaluasi kredibilitas berdasarkan formula
-    const evaluations = await aiService.evaluateNewsCredibility(rawArticles);
+    // 2. Ambil acuan baseline (bisa dari request body kustom, pilihan database, atau seluruhnya di DB)
+    const { baselines: customBaselines, baselineIds } = req.body;
+    let baselines = [];
 
-    // Update masing-masing artikel di database
-    const updatedArticles = [];
-    for (const article of rawArticles) {
-      // Cari apakah artikel ini masuk dalam evaluasi relevan oleh AI
-      const evalData = evaluations.find(e => e.article_id === article.id);
+    if (baselineIds && Array.isArray(baselineIds) && baselineIds.length > 0) {
+      baselines = await prisma.systemBaseline.findMany({
+        where: { id: { in: baselineIds } }
+      });
+    }
 
-      if (evalData) {
-        // Jika relevan, hitung skor akhir menggunakan formula
-        const S = evalData.source_reliability_score;
-        const T = evalData.triangulation_score;
-        const C = evalData.completeness_score;
-        const score = (S * 0.4) + (T * 0.3) + (C * 0.3);
+    if (customBaselines && Array.isArray(customBaselines) && customBaselines.length > 0) {
+      const formattedCustom = customBaselines.map(b => ({
+        category: b.category,
+        baselineValue: b.baselineValue || b.baseline_value,
+        description: b.description || 'Baseline Ad-Hoc'
+      }));
+      baselines = baselines.concat(formattedCustom);
+    }
 
-        const updated = await prisma.rawArticle.update({
-          where: { id: article.id },
-          data: {
-            credibilityScore: parseFloat(score.toFixed(2)),
-            triangulationGroup: evalData.triangulation_group,
-            credibilityFactors: {
-              sourceReliability: S,
-              triangulation: T,
-              completeness: C,
-              reasoning: evalData.reasoning,
-              supportingSources: evalData.supporting_sources,
-              isRelevantToEws: true,
-              potentialChaosDescription: evalData.potential_chaos_description
-            }
-          }
-        });
-        updatedArticles.push(updated);
-      } else {
-        // Jika tidak relevan dengan EWS, tandai dengan skor 0
-        const updated = await prisma.rawArticle.update({
-          where: { id: article.id },
-          data: {
-            credibilityScore: 0.0,
-            triangulationGroup: 'Bukan Isu EWS',
-            credibilityFactors: {
-              sourceReliability: 0,
-              triangulation: 0,
-              completeness: 0,
-              reasoning: 'AI mengklasifikasikan berita ini tidak memiliki potensi memicu kerusuhan masyarakat atau konflik ulayat/RKPD.',
-              supportingSources: [],
-              isRelevantToEws: false,
-              potentialChaosDescription: 'Isu ini tidak membahayakan stabilitas wilayah Kabupaten Mimika.'
-            }
-          }
-        });
-        updatedArticles.push(updated);
+    if (baselines.length === 0) {
+      baselines = await prisma.systemBaseline.findMany();
+    }
+
+    // 3. Panggil AI Service untuk menyaring dan mencocokkan berita dengan baseline
+    const newsReports = await aiService.evaluateNewsCredibility(liveArticles, baselines);
+
+    console.log(`[Fase 1] AI menyaring ${newsReports.length} berita berpotensi kerusuhan dari ${liveArticles.length} total berita hasil pencarian.`);
+
+    // 4. Simpan berita yang relevan saja ke database raw_articles
+    const processedArticles = [];
+    for (const report of newsReports) {
+      // Ambil index artikel asli menggunakan temp ID dari AI
+      const idx = parseInt(report.article_id, 10);
+      if (isNaN(idx) || idx < 0 || idx >= liveArticles.length) {
+        console.warn(`[Fase 1] Mengabaikan report dengan index tidak valid: ${report.article_id}`);
+        continue;
       }
+
+      const originalArticle = liveArticles[idx];
+
+      // Periksa duplikasi judul berita di database untuk menghindari duplikasi record
+      let dbArticle = await prisma.rawArticle.findFirst({
+        where: { title: originalArticle.title }
+      });
+
+      if (!dbArticle) {
+        // Masukkan artikel baru yang lolos penyaringan EWS
+        dbArticle = await prisma.rawArticle.create({
+          data: {
+            title: originalArticle.title,
+            sourceName: originalArticle.sourceName,
+            sourceType: originalArticle.sourceType,
+            url: originalArticle.url,
+            content: originalArticle.content,
+            publishedAt: originalArticle.publishedAt,
+            credibilityScore: 100.0,
+            triangulationGroup: report.triangulation_group,
+            credibilityFactors: {
+              content: report.content,
+              source: report.source,
+              url: report.url,
+              potentialChaosExplanation: report.potential_chaos_explanation,
+              supportingSources: report.supporting_sources,
+              isRelevantToEws: true
+            }
+          }
+        });
+      } else {
+        // Jika sudah ada, update parameter EWS terbarunya
+        dbArticle = await prisma.rawArticle.update({
+          where: { id: dbArticle.id },
+          data: {
+            credibilityScore: 100.0,
+            triangulationGroup: report.triangulation_group,
+            credibilityFactors: {
+              content: report.content,
+              source: report.source,
+              url: report.url,
+              potentialChaosExplanation: report.potential_chaos_explanation,
+              supportingSources: report.supporting_sources,
+              isRelevantToEws: true
+            }
+          }
+        });
+      }
+
+      processedArticles.push(dbArticle);
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Penilaian kredibilitas berita dan triangulasi selesai.',
-      data: updatedArticles
+      message: `Penyaringan berita selesai. Ditemukan ${processedArticles.length} berita berpotensi kerusuhan.`,
+      data: processedArticles
     });
   } catch (error) {
     console.error('Error in processNews controller:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal memproses kredibilitas berita.',
+      message: 'Gagal memproses dan menyaring berita terkini.',
       error: error.message,
     });
   }
@@ -150,8 +164,28 @@ export const runRegionalAnalysis = async (req, res) => {
       });
     }
 
-    // Ambil baseline RKPD/Pemerintah Mimika terbaru
-    const baselines = await prisma.systemBaseline.findMany();
+    // Ambil acuan baseline (bisa dari request kustom, pilihan database, atau seluruhnya di DB)
+    const { baselines: customBaselines, baselineIds } = req.body;
+    let baselines = [];
+
+    if (baselineIds && Array.isArray(baselineIds) && baselineIds.length > 0) {
+      baselines = await prisma.systemBaseline.findMany({
+        where: { id: { in: baselineIds } }
+      });
+    }
+
+    if (customBaselines && Array.isArray(customBaselines) && customBaselines.length > 0) {
+      const formattedCustom = customBaselines.map(b => ({
+        category: b.category,
+        baselineValue: b.baselineValue || b.baseline_value,
+        description: b.description || 'Baseline Ad-Hoc'
+      }));
+      baselines = baselines.concat(formattedCustom);
+    }
+
+    if (baselines.length === 0) {
+      baselines = await prisma.systemBaseline.findMany();
+    }
 
     // Panggil AI Service untuk menganalisis relasi berita dengan target RKPD
     const { analysis, rawResponse } = await aiService.analyzeRegionalImpact(credibleArticles, baselines);

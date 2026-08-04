@@ -12,11 +12,12 @@ class AiService {
   }
 
   /**
-   * FASE 1: Menilai kredibilitas berita dan menentukan grup triangulasi
-   * @param {Array} articles - Daftar artikel mentah dari database
-   * @returns {Promise<Array>} - Array objek evaluasi kredibilitas
+   * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan prompt user dan baseline
+   * @param {Array} articles - Daftar artikel dari hasil penelusuran internet
+   * @param {Array} baselines - Daftar baseline acuan dari database
+   * @returns {Promise<Array>} - Array objek berita relevan
    */
-  async evaluateNewsCredibility(articles) {
+  async evaluateNewsCredibility(articles, baselines = []) {
     if (!articles || articles.length === 0) {
       throw new Error('Tidak ada artikel untuk dinilai kredibilitasnya.');
     }
@@ -25,8 +26,14 @@ class AiService {
       throw new Error('OPENAI_API_KEY tidak dikonfigurasi.');
     }
 
+    const formattedBaselines = baselines.map((b, idx) => {
+      return `Baseline Acuan ${idx + 1}:
+- Kategori: ${b.category}
+- Kondisi Normal: ${b.baselineValue}`;
+    }).join('\n\n');
+
     const formattedArticles = articles.map((a, idx) => {
-      return `Article ID: ${a.id}
+      return `Article Temp ID: ${idx}
 - Title: ${a.title}
 - Source: ${a.sourceName} (${a.sourceType})
 - URL: ${a.url}
@@ -34,50 +41,21 @@ class AiService {
 ----------------------------------------`;
     }).join('\n');
 
-    const systemPrompt = `Anda adalah Asisten Analis Data BRIDA Kabupaten Mimika.
-Tugas Anda adalah memilah berita terbaru di Kabupaten Mimika yang berpotensi memicu keributan/konflik sosial di tengah masyarakat atau berita yang menyimpang dari target RKPD dan Kebijakan Pemda Kabupaten Mimika.
+    const systemPrompt = `berikan saya berita hari ini untuk wilayah mimika yang memiliki potensi menyebabkan kerusuhan di wilayah mimika. berikan saya sumber sumber muculnya berita tersebut, cari di sosial media(FB, IG, X, TikTok, YouTube, Threads), atau media yang memiliki kredibilitas tinggi (portal.mimikakab.go.id, salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com, tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co, Polri, Pemda SP 3, Humas) sertakan juga link referensi dari berita yang ditemukan.
 
-Berikut adalah acuan BASELINE KERAWANAN LOKAL di wilayah Kabupaten Mimika yang perlu Anda waspadai:
-1. Sengketa Hak Ulayat & Operasional Objek Vital Nasional (Freeport): Protes adat (suku Amungme/Kamoro), pemblokiran jalan trans-timika (Tembagapura, Kuala Kencana, area port Poumako), sengketa pemanfaatan lahan pertambangan.
-2. Isu Rekrutmen Tenaga Kerja Tambang: Aksi demonstrasi, mogok massal, atau ketegangan terkait rekrutmen pekerja asli Papua (OAP) vs pendatang (non-OAP) di Freeport atau kontraktornya.
-3. Bentrokan Antarsuku / Antarkampung: Tensi permusuhan adat, perkelahian kelompok pemuda antarkampung (misal di Kwamki Narama, Wania, Mimika Baru).
-4. Kelangkaan Bahan Pokok & Energi Vital: Antrean panjang BBM (Solar/Pertalite) di SPBU Timika, kenaikan ekstrem sembako di Pasar Sentral Timika, atau penutupan jalur logistik pelabuhan Poumako.
-5. Isu SARA & Disinformasi Provokatif: Berita atau rumor bernada kesukuan/keagamaan yang ramai di media sosial lokal (Facebook Info Timika, WA Group, dll.) yang dapat memicu gesekan fisik.
+Sebagai acuan penentu potensi kerusuhan, gunakan BASELINE keadaan aman/target pemerintah Kabupaten Mimika berikut sebagai pembanding:
+${formattedBaselines}
 
-Aturan Penapisan Sangat Ketat:
-- Tentukan apakah berita ini RELEVAN untuk dipantau oleh Early Warning System (EWS) ("is_relevant_to_ews") berdasarkan baseline kerawanan di atas.
-- PENTING: HANYA kembalikan artikel yang dinilai RELEVAN ("is_relevant_to_ews": true) di dalam array "evaluations". Jika sebuah artikel dinilai TIDAK RELEVAN (berita olahraga, perayaan seremonial biasa, kabar positif pemda rutin, dll.), JANGAN masukkan artikel tersebut sama sekali ke dalam array "evaluations".
-- Untuk artikel yang relevan, lakukan penilaian kredibilitas berdasarkan tiga parameter utama (skala 0 - 100):
-   a. Source Reliability (S) - Keandalan Sumber:
-      - Laporan Instansi Resmi (Polri, Pemda SP 3, Humas): 95-100
-      - Portal Resmi Pemerintah Daerah Mimika (portal.mimikakab.go.id): 95-100
-      - Kantor Berita Nasional Terpercaya (antaranews.com atau papua.antaranews.com): 90-95
-      - Media Lokal Utama Mimika/Papua (salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com): 85-94
-      - Media Nasional Terverifikasi (tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co): 85-94
-      - Komunitas/Laporan Warga Terverifikasi langsung: 50-74
-      - Akun Media Sosial Pribadi/Publik Umum (FB, IG, TikTok, YouTube, Threads) tanpa konfirmasi link eksternal: 10-49
-   b. Triangulation Factor (T) - Faktor Triangulasi:
-      - Apakah isu ini diberitakan oleh banyak sumber independen yang berbeda di dalam batch ini?
-      - 3 atau lebih sumber independen: 100
-      - 2 sumber independen: 60
-      - Hanya 1 sumber tunggal (tidak ada pembanding): 20
-   c. Completeness (C) - Kelengkapan Informasi:
-      - Ketersediaan detail 5W+1H (Kejadian, Lokasi Distrik spesifik di Mimika, Waktu, Pelaku, Kronologi).
-      - Lengkap & presisi: 90-100
-      - Sedang (hanya menyebut kota/Timika secara umum): 50-89
-      - Sangat minim/opini: 10-49
+Aturan Pemrosesan:
+1. Jalankan pencarian ini hanya pada daftar artikel yang disediakan di bawah.
+2. Jika artikel tidak memenuhi instruksi pencarian tersebut (tidak berpotensi memicu kerusuhan di Mimika berdasarkan perbandingan dengan baseline), JANGAN masukkan artikel tersebut ke dalam array "news_reports".`;
 
-Kelompokkan artikel relevan yang membahas isu/kejadian yang sama ke dalam "triangulation_group" yang sama (beri nama grup yang deskriptif dalam Bahasa Indonesia).
-Daftarkan artikel-artikel lain dalam batch ini yang membahas isu sejenis (dalam grup triangulasi yang sama) sebagai "supporting_sources", lengkap dengan judul, nama sumber, dan URL mereka.`;
-
-    const userPrompt = `Berikut adalah daftar artikel mentah hari ini:
-${formattedArticles}
-
-Silakan lakukan penapisan relevansi EWS dan penilaian kredibilitas untuk artikel-artikel yang relevan saja sesuai aturan penapisan ketat di atas.`;
+    const userPrompt = `Daftar artikel untuk diproses:
+${formattedArticles}`;
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 1] Mengirim analisis relevansi & kredibilitas ke OpenAI (${modelName})...`);
+      console.log(`[Fase 1] Menyaring berita berpotensi kerusuhan ke OpenAI (${modelName})...`);
 
       const completion = await this.openai.chat.completions.create({
         model: modelName,
@@ -88,47 +66,39 @@ Silakan lakukan penapisan relevansi EWS dan penilaian kredibilitas untuk artikel
         response_format: {
           type: 'json_schema',
           json_schema: {
-            name: 'news_credibility_response',
+            name: 'news_filtering_response',
             strict: true,
             schema: {
               type: 'object',
               properties: {
-                evaluations: {
+                news_reports: {
                   type: 'array',
                   items: {
                     type: 'object',
                     properties: {
                       article_id: {
                         type: 'string',
-                        description: 'ID artikel yang dinilai'
+                        description: 'ID artikel asli'
                       },
-                      is_relevant_to_ews: {
-                        type: 'boolean',
-                        description: 'Harus selalu bernilai true'
-                      },
-                      potential_chaos_description: {
+                      title: {
                         type: 'string',
-                        description: 'Penjelasan mengapa artikel ini relevan dengan potensi kerusuhan masyarakat Mimika berdasarkan baseline.'
+                        description: 'Judul berita'
                       },
-                      triangulation_group: {
+                      content: {
                         type: 'string',
-                        description: 'Nama/Label grup isu yang sama (misal: "Antrean BBM SPBU Komodo", "Pilkada Mimika 2026")'
+                        description: 'Isi atau konten berita'
                       },
-                      source_reliability_score: {
-                        type: 'number',
-                        description: 'Skor Keandalan Sumber (S) 0-100'
-                      },
-                      triangulation_score: {
-                        type: 'number',
-                        description: 'Skor Triangulasi (T) 0-100'
-                      },
-                      completeness_score: {
-                        type: 'number',
-                        description: 'Skor Kelengkapan (C) 0-100'
-                      },
-                      reasoning: {
+                      source: {
                         type: 'string',
-                        description: 'Alasan penentuan skoring dalam Bahasa Indonesia'
+                        description: 'Sumber berita'
+                      },
+                      url: {
+                        type: 'string',
+                        description: 'URL berita'
+                      },
+                      potential_chaos_explanation: {
+                        type: 'string',
+                        description: 'Penjelasan mengapa berita ini berpotensi memicu kerusuhan'
                       },
                       supporting_sources: {
                         type: 'array',
@@ -137,39 +107,37 @@ Silakan lakukan penapisan relevansi EWS dan penilaian kredibilitas untuk artikel
                           properties: {
                             source_name: {
                               type: 'string',
-                              description: 'Nama sumber berita pendukung'
+                              description: 'Nama media'
                             },
                             url: {
                               type: 'string',
-                              description: 'URL lengkap berita pendukung'
+                              description: 'Link URL media'
                             },
                             title: {
                               type: 'string',
-                              description: 'Judul berita pendukung'
+                              description: 'Judul artikel pendukung'
                             }
                           },
                           required: ['source_name', 'url', 'title'],
                           additionalProperties: false
                         },
-                        description: 'Daftar referensi sumber berita lain dari batch ini yang mendukung/membahas isu yang sama.'
+                        description: 'Daftar berita lain dalam batch yang membahas isu sejenis (jika ada)'
                       }
                     },
                     required: [
                       'article_id',
-                      'is_relevant_to_ews',
-                      'potential_chaos_description',
-                      'triangulation_group',
-                      'source_reliability_score',
-                      'triangulation_score',
-                      'completeness_score',
-                      'reasoning',
+                      'title',
+                      'content',
+                      'source',
+                      'url',
+                      'potential_chaos_explanation',
                       'supporting_sources'
                     ],
                     additionalProperties: false
                   }
                 }
               },
-              required: ['evaluations'],
+              required: ['news_reports'],
               additionalProperties: false
             }
           }
@@ -177,10 +145,10 @@ Silakan lakukan penapisan relevansi EWS dan penilaian kredibilitas untuk artikel
       });
 
       const parsedResponse = JSON.parse(completion.choices[0].message.content);
-      return parsedResponse.evaluations;
+      return parsedResponse.news_reports;
     } catch (error) {
       console.error('Error in evaluateNewsCredibility:', error);
-      throw new Error(`Gagal mengevaluasi relevansi & kredibilitas: ${error.message}`);
+      throw new Error(`Gagal menyaring berita: ${error.message}`);
     }
   }
 
