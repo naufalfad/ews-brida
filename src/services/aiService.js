@@ -35,40 +35,49 @@ class AiService {
     }).join('\n');
 
     const systemPrompt = `Anda adalah Asisten Analis Data BRIDA Kabupaten Mimika.
-Tugas Anda adalah menilai kredibilitas berita berdasarkan tiga parameter utama (skala 0 - 100):
+Tugas Anda adalah memilah berita terbaru di Kabupaten Mimika yang berpotensi memicu keributan/konflik sosial di tengah masyarakat atau berita yang menyimpang dari target RKPD dan Kebijakan Pemda Kabupaten Mimika.
 
-1. Source Reliability (S) - Keandalan Sumber:
-   - Laporan Instansi Resmi (Polri, Pemda SP 3, Humas): 95-100
-   - Portal Resmi Pemerintah Daerah Mimika (portal.mimikakab.go.id): 95-100
-   - Kantor Berita Nasional Terpercaya (antaranews.com atau papua.antaranews.com): 90-95
-   - Media Lokal Utama Mimika/Papua (salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com): 85-94
-   - Media Nasional Terverifikasi (tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co): 85-94
-   - Komunitas/Laporan Warga Terverifikasi langsung: 50-74
-   - Akun Media Sosial Pribadi/Publik Umum (FB, IG, TikTok, YouTube, Threads) tanpa konfirmasi link eksternal: 10-49
+Berikut adalah acuan BASELINE KERAWANAN LOKAL di wilayah Kabupaten Mimika yang perlu Anda waspadai:
+1. Sengketa Hak Ulayat & Operasional Objek Vital Nasional (Freeport): Protes adat (suku Amungme/Kamoro), pemblokiran jalan trans-timika (Tembagapura, Kuala Kencana, area port Poumako), sengketa pemanfaatan lahan pertambangan.
+2. Isu Rekrutmen Tenaga Kerja Tambang: Aksi demonstrasi, mogok massal, atau ketegangan terkait rekrutmen pekerja asli Papua (OAP) vs pendatang (non-OAP) di Freeport atau kontraktornya.
+3. Bentrokan Antarsuku / Antarkampung: Tensi permusuhan adat, perkelahian kelompok pemuda antarkampung (misal di Kwamki Narama, Wania, Mimika Baru).
+4. Kelangkaan Bahan Pokok & Energi Vital: Antrean panjang BBM (Solar/Pertalite) di SPBU Timika, kenaikan ekstrem sembako di Pasar Sentral Timika, atau penutupan jalur logistik pelabuhan Poumako.
+5. Isu SARA & Disinformasi Provokatif: Berita atau rumor bernada kesukuan/keagamaan yang ramai di media sosial lokal (Facebook Info Timika, WA Group, dll.) yang dapat memicu gesekan fisik.
 
-2. Triangulation Factor (T) - Faktor Triangulasi:
-   - Apakah isu ini diberitakan oleh banyak sumber independen yang berbeda di dalam batch ini?
-   - 3 atau lebih sumber independen: 100
-   - 2 sumber independen: 60
-   - Hanya 1 sumber tunggal (tidak ada pembanding): 20
+Aturan Penapisan Sangat Ketat:
+- Tentukan apakah berita ini RELEVAN untuk dipantau oleh Early Warning System (EWS) ("is_relevant_to_ews") berdasarkan baseline kerawanan di atas.
+- PENTING: HANYA kembalikan artikel yang dinilai RELEVAN ("is_relevant_to_ews": true) di dalam array "evaluations". Jika sebuah artikel dinilai TIDAK RELEVAN (berita olahraga, perayaan seremonial biasa, kabar positif pemda rutin, dll.), JANGAN masukkan artikel tersebut sama sekali ke dalam array "evaluations".
+- Untuk artikel yang relevan, lakukan penilaian kredibilitas berdasarkan tiga parameter utama (skala 0 - 100):
+   a. Source Reliability (S) - Keandalan Sumber:
+      - Laporan Instansi Resmi (Polri, Pemda SP 3, Humas): 95-100
+      - Portal Resmi Pemerintah Daerah Mimika (portal.mimikakab.go.id): 95-100
+      - Kantor Berita Nasional Terpercaya (antaranews.com atau papua.antaranews.com): 90-95
+      - Media Lokal Utama Mimika/Papua (salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com): 85-94
+      - Media Nasional Terverifikasi (tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co): 85-94
+      - Komunitas/Laporan Warga Terverifikasi langsung: 50-74
+      - Akun Media Sosial Pribadi/Publik Umum (FB, IG, TikTok, YouTube, Threads) tanpa konfirmasi link eksternal: 10-49
+   b. Triangulation Factor (T) - Faktor Triangulasi:
+      - Apakah isu ini diberitakan oleh banyak sumber independen yang berbeda di dalam batch ini?
+      - 3 atau lebih sumber independen: 100
+      - 2 sumber independen: 60
+      - Hanya 1 sumber tunggal (tidak ada pembanding): 20
+   c. Completeness (C) - Kelengkapan Informasi:
+      - Ketersediaan detail 5W+1H (Kejadian, Lokasi Distrik spesifik di Mimika, Waktu, Pelaku, Kronologi).
+      - Lengkap & presisi: 90-100
+      - Sedang (hanya menyebut kota/Timika secara umum): 50-89
+      - Sangat minim/opini: 10-49
 
-3. Completeness (C) - Kelengkapan Informasi:
-   - Ketersediaan detail 5W+1H (Kejadian, Lokasi Distrik spesifik di Mimika, Waktu, Pelaku, Kronologi).
-   - Lengkap & presisi: 90-100
-   - Sedang (hanya menyebut kota/Timika secara umum): 50-89
-   - Sangat minim/opini: 10-49
-
-Kelompokkan artikel yang membahas isu/kejadian yang sama ke dalam "triangulation_group" yang sama (beri nama grup yang deskriptif dalam Bahasa Indonesia).
-Untuk setiap artikel, daftarkan artikel-artikel lain dalam batch ini yang membahas isu sejenis (dalam grup triangulasi yang sama) sebagai "supporting_sources", lengkap dengan judul, nama sumber, dan URL mereka untuk digunakan sebagai tombol tag link referensi.`;
+Kelompokkan artikel relevan yang membahas isu/kejadian yang sama ke dalam "triangulation_group" yang sama (beri nama grup yang deskriptif dalam Bahasa Indonesia).
+Daftarkan artikel-artikel lain dalam batch ini yang membahas isu sejenis (dalam grup triangulasi yang sama) sebagai "supporting_sources", lengkap dengan judul, nama sumber, dan URL mereka.`;
 
     const userPrompt = `Berikut adalah daftar artikel mentah hari ini:
 ${formattedArticles}
 
-Silakan lakukan penilaian kredibilitas untuk masing-masing artikel di atas.`;
+Silakan lakukan penapisan relevansi EWS dan penilaian kredibilitas untuk artikel-artikel yang relevan saja sesuai aturan penapisan ketat di atas.`;
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 1] Mengirim analisis kredibilitas ke OpenAI (${modelName})...`);
+      console.log(`[Fase 1] Mengirim analisis relevansi & kredibilitas ke OpenAI (${modelName})...`);
 
       const completion = await this.openai.chat.completions.create({
         model: modelName,
@@ -92,6 +101,14 @@ Silakan lakukan penilaian kredibilitas untuk masing-masing artikel di atas.`;
                       article_id: {
                         type: 'string',
                         description: 'ID artikel yang dinilai'
+                      },
+                      is_relevant_to_ews: {
+                        type: 'boolean',
+                        description: 'Harus selalu bernilai true'
+                      },
+                      potential_chaos_description: {
+                        type: 'string',
+                        description: 'Penjelasan mengapa artikel ini relevan dengan potensi kerusuhan masyarakat Mimika berdasarkan baseline.'
                       },
                       triangulation_group: {
                         type: 'string',
@@ -139,6 +156,8 @@ Silakan lakukan penilaian kredibilitas untuk masing-masing artikel di atas.`;
                     },
                     required: [
                       'article_id',
+                      'is_relevant_to_ews',
+                      'potential_chaos_description',
                       'triangulation_group',
                       'source_reliability_score',
                       'triangulation_score',
@@ -161,7 +180,7 @@ Silakan lakukan penilaian kredibilitas untuk masing-masing artikel di atas.`;
       return parsedResponse.evaluations;
     } catch (error) {
       console.error('Error in evaluateNewsCredibility:', error);
-      throw new Error(`Gagal mengevaluasi kredibilitas: ${error.message}`);
+      throw new Error(`Gagal mengevaluasi relevansi & kredibilitas: ${error.message}`);
     }
   }
 

@@ -47,28 +47,54 @@ export const processNews = async (req, res) => {
 
     // Update masing-masing artikel di database
     const updatedArticles = [];
-    for (const evalData of evaluations) {
-      // Hitung skor akhir menggunakan formula: (S * 0.4) + (T * 0.3) + (C * 0.3)
-      const S = evalData.source_reliability_score;
-      const T = evalData.triangulation_score;
-      const C = evalData.completeness_score;
-      const score = (S * 0.4) + (T * 0.3) + (C * 0.3);
+    for (const article of rawArticles) {
+      // Cari apakah artikel ini masuk dalam evaluasi relevan oleh AI
+      const evalData = evaluations.find(e => e.article_id === article.id);
 
-      const updated = await prisma.rawArticle.update({
-        where: { id: evalData.article_id },
-        data: {
-          credibilityScore: parseFloat(score.toFixed(2)),
-          triangulationGroup: evalData.triangulation_group,
-          credibilityFactors: {
-            sourceReliability: S,
-            triangulation: T,
-            completeness: C,
-            reasoning: evalData.reasoning,
-            supportingSources: evalData.supporting_sources
+      if (evalData) {
+        // Jika relevan, hitung skor akhir menggunakan formula
+        const S = evalData.source_reliability_score;
+        const T = evalData.triangulation_score;
+        const C = evalData.completeness_score;
+        const score = (S * 0.4) + (T * 0.3) + (C * 0.3);
+
+        const updated = await prisma.rawArticle.update({
+          where: { id: article.id },
+          data: {
+            credibilityScore: parseFloat(score.toFixed(2)),
+            triangulationGroup: evalData.triangulation_group,
+            credibilityFactors: {
+              sourceReliability: S,
+              triangulation: T,
+              completeness: C,
+              reasoning: evalData.reasoning,
+              supportingSources: evalData.supporting_sources,
+              isRelevantToEws: true,
+              potentialChaosDescription: evalData.potential_chaos_description
+            }
           }
-        }
-      });
-      updatedArticles.push(updated);
+        });
+        updatedArticles.push(updated);
+      } else {
+        // Jika tidak relevan dengan EWS, tandai dengan skor 0
+        const updated = await prisma.rawArticle.update({
+          where: { id: article.id },
+          data: {
+            credibilityScore: 0.0,
+            triangulationGroup: 'Bukan Isu EWS',
+            credibilityFactors: {
+              sourceReliability: 0,
+              triangulation: 0,
+              completeness: 0,
+              reasoning: 'AI mengklasifikasikan berita ini tidak memiliki potensi memicu kerusuhan masyarakat atau konflik ulayat/RKPD.',
+              supportingSources: [],
+              isRelevantToEws: false,
+              potentialChaosDescription: 'Isu ini tidak membahayakan stabilitas wilayah Kabupaten Mimika.'
+            }
+          }
+        });
+        updatedArticles.push(updated);
+      }
     }
 
     return res.status(200).json({
@@ -97,7 +123,7 @@ export const runRegionalAnalysis = async (req, res) => {
 
     console.log(`[Fase 2] Mengambil berita dengan kredibilitas >= ${minCredibility} untuk analisis dampak...`);
 
-    const credibleArticles = await prisma.rawArticle.findMany({
+    const scoredArticles = await prisma.rawArticle.findMany({
       where: {
         credibilityScore: {
           gte: parseFloat(minCredibility)
@@ -106,13 +132,21 @@ export const runRegionalAnalysis = async (req, res) => {
       orderBy: {
         createdAt: 'desc',
       },
-      take: parseInt(limit, 10),
+      take: parseInt(limit, 10) * 3, // Mengambil lebih banyak untuk kompensasi penyaringan relevansi
     });
+
+    // Saring hanya artikel yang ditandai RELEVAN dengan EWS (isRelevantToEws === true)
+    const credibleArticles = scoredArticles
+      .filter(a => {
+        const factors = a.credibilityFactors;
+        return factors && factors.isRelevantToEws === true;
+      })
+      .slice(0, parseInt(limit, 10));
 
     if (credibleArticles.length === 0) {
       return res.status(400).json({
         success: false,
-        message: `Tidak menemukan berita kredibel dengan skor >= ${minCredibility} untuk dianalisis. Jalankan Fase 1 terlebih dahulu.`,
+        message: `Tidak menemukan berita kredibel dan relevan EWS dengan skor >= ${minCredibility}. Jalankan Fase 1 terlebih dahulu atau pastikan ada isu potensial keamanan.`,
       });
     }
 
