@@ -36,23 +36,30 @@ class AiService {
 
     const systemPrompt = `Anda adalah Asisten Analis Data BRIDA Kabupaten Mimika.
 Tugas Anda adalah menilai kredibilitas berita berdasarkan tiga parameter utama (skala 0 - 100):
+
 1. Source Reliability (S) - Keandalan Sumber:
-   - Laporan Instansi Resmi (Polri, Pemda, Humas): 90-100
-   - Media Online Resmi Terverifikasi (detik.com, Radar Timika): 75-89
-   - Komunitas/Laporan Warga Terverifikasi: 50-74
-   - Akun Media Sosial Pribadi/Publik Umum (FB, IG, TikTok): 10-49
+   - Laporan Instansi Resmi (Polri, Pemda SP 3, Humas): 95-100
+   - Portal Resmi Pemerintah Daerah Mimika (portal.mimikakab.go.id): 95-100
+   - Kantor Berita Nasional Terpercaya (antaranews.com atau papua.antaranews.com): 90-95
+   - Media Lokal Utama Mimika/Papua (salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com): 85-94
+   - Media Nasional Terverifikasi (tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co): 85-94
+   - Komunitas/Laporan Warga Terverifikasi langsung: 50-74
+   - Akun Media Sosial Pribadi/Publik Umum (FB, IG, TikTok, YouTube, Threads) tanpa konfirmasi link eksternal: 10-49
+
 2. Triangulation Factor (T) - Faktor Triangulasi:
-   - Apakah isu ini diberitakan oleh banyak sumber independen yang berbeda?
+   - Apakah isu ini diberitakan oleh banyak sumber independen yang berbeda di dalam batch ini?
    - 3 atau lebih sumber independen: 100
    - 2 sumber independen: 60
    - Hanya 1 sumber tunggal (tidak ada pembanding): 20
+
 3. Completeness (C) - Kelengkapan Informasi:
    - Ketersediaan detail 5W+1H (Kejadian, Lokasi Distrik spesifik di Mimika, Waktu, Pelaku, Kronologi).
    - Lengkap & presisi: 90-100
    - Sedang (hanya menyebut kota/Timika secara umum): 50-89
    - Sangat minim/opini: 10-49
 
-Kelompokkan juga artikel yang membahas isu/kejadian yang sama ke dalam "triangulation_group" yang sama (beri nama label grup yang deskriptif dalam Bahasa Indonesia).`;
+Kelompokkan artikel yang membahas isu/kejadian yang sama ke dalam "triangulation_group" yang sama (beri nama grup yang deskriptif dalam Bahasa Indonesia).
+Untuk setiap artikel, daftarkan artikel-artikel lain dalam batch ini yang membahas isu sejenis (dalam grup triangulasi yang sama) sebagai "supporting_sources", lengkap dengan judul, nama sumber, dan URL mereka untuk digunakan sebagai tombol tag link referensi.`;
 
     const userPrompt = `Berikut adalah daftar artikel mentah hari ini:
 ${formattedArticles}
@@ -105,6 +112,29 @@ Silakan lakukan penilaian kredibilitas untuk masing-masing artikel di atas.`;
                       reasoning: {
                         type: 'string',
                         description: 'Alasan penentuan skoring dalam Bahasa Indonesia'
+                      },
+                      supporting_sources: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            source_name: {
+                              type: 'string',
+                              description: 'Nama sumber berita pendukung'
+                            },
+                            url: {
+                              type: 'string',
+                              description: 'URL lengkap berita pendukung'
+                            },
+                            title: {
+                              type: 'string',
+                              description: 'Judul berita pendukung'
+                            }
+                          },
+                          required: ['source_name', 'url', 'title'],
+                          additionalProperties: false
+                        },
+                        description: 'Daftar referensi sumber berita lain dari batch ini yang mendukung/membahas isu yang sama.'
                       }
                     },
                     required: [
@@ -113,7 +143,8 @@ Silakan lakukan penilaian kredibilitas untuk masing-masing artikel di atas.`;
                       'source_reliability_score',
                       'triangulation_score',
                       'completeness_score',
-                      'reasoning'
+                      'reasoning',
+                      'supporting_sources'
                     ],
                     additionalProperties: false
                   }

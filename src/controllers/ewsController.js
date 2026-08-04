@@ -63,7 +63,8 @@ export const processNews = async (req, res) => {
             sourceReliability: S,
             triangulation: T,
             completeness: C,
-            reasoning: evalData.reasoning
+            reasoning: evalData.reasoning,
+            supportingSources: evalData.supporting_sources
           }
         }
       });
