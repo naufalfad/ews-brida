@@ -1,0 +1,249 @@
+DOKUMEN CETAK BIRU EWS & MANAJEMEN DATA LENGKAP
+Sistem Peringatan Dini Potensi Konflik & Kerusuhan Sosial Berbasis AI, Big Data & Triangulasi (Fokus Mimika & Berita Nasional
+Relevan)
+Status Dokumen: Full Technical Blueprint & PoC 	Target Wilayah: Kab. Mimika, Papua Tengah 	Tanggal: Agustus 2026
+1. LATAR BELAKANG & LATAR MASALAH (EXECUTIVE SUMMARY)
+Latar Belakang: Dynamic ketertiban dan keamanan masyarakat (Kamtibmas) di wilayah Mimika dan sekitarnya memiliki
+kompleksitas yang tinggi. Konflik sosial tidak hanya dipicu oleh perselisihan fisik langsung, tetapi sering kali berakar dari
+indikator kerentanan sosial-ekonomi seperti kelangkaan pangan, ketimpangan distribusi bantuan, hingga krisis kelaparan
+di wilayah terisolir. Keresahan ini dapat membesar secara eksponensial apabila teramplifikasi oleh disinformasi (hoaks)
+dan provokasi di media sosial.
+Rumusan Masalah: Pemantauan reaktif konvensional kerap terlambat mendeteksi gejolak akar rumput. Di sisi lain, arus
+informasi digital memicu *data overload* dan *noise* tinggi, sehingga sulit membedakan keluhan publik biasa, berita
+hoaks, dan ancaman riil pemicu konflik fisik.
+Solusi Strategis: Mengembangkan **Early Warning System (EWS) Potensi Konflik Sosial** berbasis AI dan Big Data
+Integration. Sistem menggabungkan data baseline sosial-ekonomi dengan pemantauan media digital secara real-time,
+menjalankan triangulasi data otomatis untuk eliminasi hoaks, serta menyajikan pemetaan prioritas wilayah dan
+rekomendasi respons berbasis logika intervensi (IF-THEN Rules).
+2. RINCIAN MENDALAM DATA BASELINE & DATA REAL-TIME
+Agar sistem EWS mampu menghasilkan skor risiko yang akurat, pengelolaan Big Data dibagi secara tegas menjadi dua pilar
+utama:
+A. DATA BASELINE (STATIS / PERIODIK: HARIAN - MINGGUAN - TAHUNAN)
+Data baseline berfungsi sebagai Fondasi Kerentanan Wilayah (Vulnerability Index). Tanpa data baseline, sistem tidak
+bisa membedakan mana wilayah yang memang rentan bergejolak dan mana wilayah yang stabil.
+1. Baseline Ekonomi & Krisis Pangan (Input Mingguan/Bulanan):
+• Parameter: Harga 9 Bahan Pokok (beras, minyak, gula, cabai) di Pasar Timika & Tembagapura, ketersediaan stok
+beras gudang, tingkat keterlambatan kapal pasokan logistik.
+• Fungsi AI: Menghitung lonjakan harga tak wajar (>20%). Jika harga beras melonjak, nilai kerentanan ekonomi
+otomatis naik.
+2. Baseline Demografi & Histori Konflik (Input Tahunan/Statis):
+• Parameter: Peta sebaran suku/adat, angka kemiskinan ekstrem per distrik, riwayat titik bentrokan masa lalu, dan
+lokasi objek vital nasional (misal: area pertambangan/Infrastruktur).
+• Fungsi AI: Menentukan bobot risiko bawaan wilayah. Distrik dengan riwayat konflik tinggi secara otomatis memiliki
+batas ambang (*threshold*) toleransi yang lebih sensitif.
+3. Baseline Bantuan Sosial & Program Pemerintah (Input Berkala):
+• Parameter: Jadwal & kuota penyaluran Bansos/Bantuan Pangan beras dari Kementan/Pemda.
+• Fungsi AI: Menjadi pembanding. Jika ada riak di sosmed tentang "Bantuan Tidak Cepat", AI mencocokkan ke
+baseline jadwal penyaluran resmi.
+B. DATA REAL-TIME (DINAMIS: SCRAPING MENIT/JAM-AN)
+Data real-time berfungsi sebagai Pemicu Deteksi Dini (Trigger Signal) yang memantau gejolak persepsi publik dan
+narasi digital secara terus-menerus.
+1. Social Listening (X/Twitter, TikTok, Facebook, Instagram):
+• Teknis Penyerapan: Scraper otomatis mengambil postingan, komentar, dan video berdasar kata kunci sensitif (misal:
+•
+•
+•
+•
+DOKUMEN PERENCANAAN STRATEGIS & TECHNICAL BLUEPRINT | RAHASIA 	Halaman 1 dari 4
+
+-- 1 of 4 --
+
+*"kelaparan Mimika"*, *"beras habis"*, *"serbu"*, *"ketidakadilan"*, *"blokir"*).
+• Fungsi AI: Analisis sentimen emosi (marah/takut) dan deteksi laju penyebaran (*escalation rate*).
+2. News Aggregator Media Lokal Papua & Mimika:
+• Sumber: RSS Feed & Web Scraping dari portal berita resmi Papua dan Mimika.
+• Fungsi AI: Mengambil fakta terkonfirmasi di lapangan yang ditulis oleh jurnalis lokal.
+3. Berita Nasional Relevan (Filtered via NER):
+• Mekanisme Filter: Berita nasional (seperti isu kenaikan BBM, kebijakan Papua Tengah) menyerap jutaan data. AI
+mengabaikan 99% berita nasional yang *noise* dan **hanya menyerap** berita yang menyebutkan kata kunci spesifik
+(*"Mimika"*, *"Timika"*, *"Tembagapura"*, *"Freeport"*).
+3. METODOLOGI ANALISIS, TRIANGULASI & AI ENGINE
+Proses pengolahan data menggunakan kombinasi Natural Language Processing (NLP), Large Language Models (LLM), dan
+Rule-Based Logic untuk mengolah data mentah menjadi intelijen yang tervalidasi.
+Tahap 1: Ingestion & Filter Bahasa Lokal
+Pengumpulan data teks dilengkapi dengan custom dictionary slang/istilah lokal Papua untuk memahami konteks dan sentimen narasi warga
+tanpa salah tafsir.
+Tahap 2: Triangulasi Data (Uji Validasi Hoax vs Fakta)
+Isu sensitif di sosmed (contoh: klaim "Kelaparan Massal di Distrik X") disilangkan secara otomatis dengan data baseline harga pangan dan
+pemberitaan media terverifikasi. Sumber diberi skor kredibilitas (*Credibility Weighting*).
+Tahap 3: Kalkulasi Skor Indeks Risiko Konflik
+Memproses seluruh indikator terbobot menjadi satu skor numerik potensi konflik wilayah (skala 0 - 100).
+Skor_Risiko_Wilayah = (Skor_Kerentanan_Baseline × 0.30) + (Skor_Sentimen_Sosmed × 0.35) + (Skor_Validasi_Berita
+× 0.35)
+4. OUTPUT UTAMA SISTEM & MATRIKS REKOMENDASI RESPONS
+Sistem menyajikan output berupa **Dashboard Geospasial** yang membagi wilayah Mimika ke dalam zonasi status risiko
+beserta skenario tindakan otomatis (IF-THEN Response Matrix):
+•
+•
+STATUS 	SKOR KRITERIA INDIKATOR TERDETEKSI 	REKOMENDASI RESPONS SISTEM (IF-THEN)
+HIJAU (LOW) 	0 - 30 Kondisi baseline stabil, keluhan publik di sosmed
+bersifat wajar, tidak ada peningkatan tren harga
+pangan.
+IF Status Hijau THEN Lakukan monitoring rutin dan
+pembaruan data baseline mingguan.
+KUNING (MED) 31 - 60 Kenaikan harga bahan pokok >20% ATAU isu
+lokal kelaparan/bantuan sosial terverifikasi di 1
+distrik. Sentimen negatif meningkat.
+IF Terdeteksi Isu Pangan/Ekonomi THEN Kirim
+peringatan awal ke Dinas Sosial/Pemda untuk
+intervensi logistik sebelum emosi publik meningkat.
+ORANYE (HIGH) 61 - 85 Isu kelaparan/sosial diiringi provokasi terstruktur
+di sosmed. Triangulasi menunjukkan indikasi
+awal mobilisasi massa.
+IF Narasi Provokasi Meningkat Pesat THEN Flag ke tim
+lapangan untuk verifikasi ground truth & siagakan
+koordinator keamanan wilayah.
+KRITIS (RED) 	86 -
+100
+Triangulasi fakta mengonfirmasi ancaman fisik
+nyata, gejolak harga ekstrem, dan seruan aksi
+massa di lokasi spesifik.
+IF Potensi Konflik Fisik Tinggi THEN Kirim *Alert
+Darurat Real-Time* ke Pimpinan & Stakeholder
+Keamanan untuk tindakan pencegahan langsung.
+DOKUMEN PERENCANAAN STRATEGIS & TECHNICAL BLUEPRINT | RAHASIA 	Halaman 2 dari 4
+
+-- 2 of 4 --
+
+5. RENCANA TAHAPAN EKSEKUSI PROJEK (ROADMAP IMPLEMENTATION)
+6. ALUR & USER WORKFLOW PADA APLIKASI WEB (FRONTEND FLOW)
+HALAMAN 1: COMMAND CENTER / EXECUTIVE DASHBOARD (PETA UTAMA)
+Peta Interaktif Geospasial (GIS Map): Menampilkan wilayah Mimika per Distrik dengan zonasi warna risiko (Hijau,
+Kuning, Oranye, Merah).
+Summary Counter Widget: Menampilkan jumlah distrik status Siaga/Bahaya, total isu aktif, dan indeks risiko rata-
+rata.
+Ticker Feed Real-Time: Stream berita dan isu sosmed terpilih 24 jam terakhir.
+HALAMAN 2: DETAIL ANALYST & MAP DRILL-DOWN
+Grafik Tren Skoring: Kenaikan/penurunan risiko dalam rentang harian, mingguan, dan bulanan.
+Breakdown Indikator: Perbandingan skor Baseline Pangan vs Sentimen Sosmed vs Validasi Berita.
+Tab Triangulasi: Bukti persilangan data (Postingan Sosmed A vs Berita Resmi B vs Data Harga Pasar C).
+HALAMAN 3: ALERT & ACTION CENTER (MEKANISME INTERVENSI)
+List pemicu peringatan dini & Kartu Rekomendasi Respons (IF-THEN) dengan tombol aksi instan (*Generate PDF*,
+*Notification WA/Telegram*, *Mark as Handled*).
+HALAMAN 4: MANAGEMENT DATA BASELINE & RULE CONFIGURATION
+Halaman khusus Admin untuk update data harga bahan pokok mingguan, laporan logistik, dan penyesuaian bobot
+skoring.
+7. PENGERJAAN DI BELAKANG LAYAR (BACKEND & DATA PIPELINE ARCHITECTURE)
+FASE PROJEK 	FOKUS KEGIATAN UTAMA OUTPUT / TARGET
+DELIVERABLE
+Fase 1: PoC &
+Formulasi
+Penyusunan indikator risiko, pengumpulan data sampel wilayah Mimika,
+serta perancangan model matematis skoring.
+Dokumen Arsitektur & Dataset
+Sampel Tervalidasi.
+Fase 2: Data
+Engine & AI
+Pembangunan pipeline data (crawling/scraping), implementasi modul NER,
+dan pengembangan algoritma triangulasi anti-hoax.
+Modul Ingestion Data & Mesin
+Triangulasi AI.
+Fase 3: EWS &
+Dashboard
+Pengembangan dashboard pemetaan geospasial (GIS), integrasi matriks
+logika IF-THEN, dan pembuatan sistem alert notification.
+Interface Dashboard EWS &
+Engine Peringatan Dini.
+Fase 4: Testing &
+Tuning
+Uji coba performa menggunakan data historis konflik/krisis masa lalu
+(*backtesting*) untuk mengukur presisi dan akurasi EWS.
+Sistem EWS Ready for Deployment
+& Final Report.
+•
+•
+•
+•
+•
+•
+•
+•
+TAHAPAN
+BACKEND MEKANISME KERJA DI BELAKANG LAYAR 	KOMPONEN / TECH STACK
+1. Ingestion Engine Script otomatis (*Cron Job*) berjalan per 15–30 menit menyerap
+postingan sosmed dan RSS feed berita lokal/nasional.
+Python (Scrapy, Playwright), BullMQ
+Queue.
+2. Preprocessing &
+NER
+Pembersihan teks, filter entitas lokasi Mimika (NER), dan penyesuaian
+istilah lokal via Kamus Dialek Papua.
+Spacy, HuggingFace Transformers,
+Custom Lexicon.
+3. Triangulasi & AI 	LLM menganalisis provokasi & sentimen. Isu dicocokkan ke database
+baseline & media kredibel untuk skor validasi.
+LLM Engine (GPT-4o/Claude/
+Llama-3), Vector Database.
+4. Scoring & EWS
+Engine
+Kalkulasi terbobot. Jika skor melewati threshold, sistem mentrigger Event
+Notification Service.
+Node.js/Python Backend, PostgreSQL
++ PostGIS, Redis.
+DOKUMEN PERENCANAAN STRATEGIS & TECHNICAL BLUEPRINT | RAHASIA 	Halaman 3 dari 4
+
+-- 3 of 4 --
+
+INFRASTRUKTUR FRONTEND
+React.js / Next.js (Framework Utama)
+Leaflet.js / Mapbox GL (Visualisasi Peta GIS)
+TailwindCSS (Responsive UI System)
+Recharts / Chart.js (Grafik & Analytics)
+INFRASTRUKTUR BACKEND & DATABASE
+Python (Data Pipeline & AI Engine)
+Node.js / Express (API Server & WebSockets)
+PostgreSQL + PostGIS (Geospatial Data)
+Redis (Caching & Queue Task Management)
+8. ARSITEKTUR & PENGELOLAAN BIG DATA (DATA ARCHITECTURE DETAIL)
+Pengelolaan Big Data dalam sistem EWS mengadopsi pola Modern Data Lakehouse Architecture untuk menangani prinsip
+5V Big Data (*Volume, Velocity, Variety, Veracity, Value*):
+A. STRUKTUR & PEMBAGIAN LAYER DATA (DATA LAYERING)
+Raw Layer (Data Mentah): Menampung seluruh hasil *scraping* teks sosmed, artikel berita HTML, dan file laporan
+mentah dari BPS/Pemda tanpa diubah.
+Processed Layer (Data Terstruktur): Data yang telah melewati proses *filtering* NER, pembersihan teks, ekstraksi
+tanggal/lokasi, serta pemberian tag sentimen.
+Curated Layer (Data Siap Analisis): Data hasil kalkulasi triangulasi, skor kerentanan wilayah per distrik, serta
+riwayat *alert status* yang siap ditampilkan di Dashboard.
+B. PENGELOLAAN VOLUME & VELOCITY (STRATEGI SKALABILITAS BIG DATA)
+Data Partitioning & Sharding: Database terdistribusi dan dibagi (*partition*) berdasarkan wilayah distrik Mimika dan
+indeks rentang waktu (Harian/Mingguan/Tahunan). Hal ini membuat kueri data jutaan baris tetap cepat (*sub-second
+query response*).
+Hot vs Cold Data Archiving:
+• Hot Data (0–30 Hari): Disimpan di RAM/Redis & VectorDB untuk analisis *real-time* berkecepatan tinggi.
+• Warm Data (1–12 Bulan): Disimpan di PostgreSQL/PostGIS untuk analisis tren bulanan dan grafik sejarah.
+• Cold Data (>1 Tahun): Diarsipkan ke Cloud Storage (format Parquet) untuk *machine learning retraining*.
+C. PENGELOLAAN VERACITY & VARIETY (VARIASI & KUALITAS DATA)
+Penanganan Data Multi-Format (Variety): Menggabungkan data teks bebas (sosmed), data terstruktur (tabel harga
+BPS), dan data spasial/geografis (koordinat peta distrik Mimika).
+Deduplikasi & Anomaly Detection (Veracity): Mesin Big Data mendeteksi *bot spam*, postingan *copy-paste*
+berulang di sosmed, serta lonjakan data tidak wajar (*data spike*) untuk dibuang sebelum dihitung oleh AI.
+Kesimpulan Cetak Biru (Blueprint): Dengan rincian lengkap Data Baseline (fondasi kerentanan) dan Data Real-Time (pemicu gejolak)
+ini, sistem EWS mampu memetakan potensi konflik fisik secara presisi, meminimalisir *false alarm*, dan memberikan panduan
+penanganan yang realistis bagi pimpinan daerah.
+TAHAPAN
+BACKEND MEKANISME KERJA DI BELAKANG LAYAR 	KOMPONEN / TECH STACK
+5. API & Sync Real-
+Time
+Sinkronisasi instan ke Frontend via WebSockets dan notifikasi otomatis
+ke Telegram/WA Pimpinan.
+Socket.io, RESTful API, Telegram/WA
+Bot API.
+•
+•
+•
+•
+•
+•
+•
+•
+•
+•
+•
+•
+•
+•
+•
+DOKUMEN PERENCANAAN STRATEGIS & TECHNICAL BLUEPRINT | RAHASIA 	Halaman 4 dari 4
+
+-- 4 of 4 --
+

@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { 
   searchIssues,
-  getIssues
+  getIssues,
+  verifyIssue,
+  analyzeIssue,
+  mitigateIssue
 } from '../controllers/ewsController.js';
 import {
   upload,
@@ -21,6 +24,27 @@ router.post('/search-issues', searchIssues);
 
 // Ambil riwayat isu EWS yang ditemukan
 router.get('/issues', getIssues);
+
+// ==========================================
+// TAHAP 2: EVALUASI KREDIBILAS & CEK HOAX
+// ==========================================
+
+// Verifikasi kredibilitas / cek hoax isu EWS terpilih
+router.post('/issues/:id/verify', verifyIssue);
+
+// ==========================================
+// TAHAP 3: ANALISIS MENDALAM DAMPAK ISU
+// ==========================================
+
+// Analisis mendalam dampak isu EWS terpilih (berstatus VERIFIED_CREDIBLE)
+router.post('/issues/:id/analyze', analyzeIssue);
+
+// ==========================================
+// TAHAP 4: MITIGASI & REKOMENDASI OPD
+// ==========================================
+
+// Rancang mitigasi dan rekomendasi OPD isu EWS terpilih (berstatus ANALYZED)
+router.post('/issues/:id/mitigate', mitigateIssue);
 
 // ==========================================
 // PENGELOLAAN BASELINE ACUAN
