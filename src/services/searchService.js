@@ -3,15 +3,14 @@
  */
 class SearchService {
   /**
-   * Fetches the latest news articles from Google News RSS feed for the query "mimika" and optional sector
-   * @param {string} sector - Optional sector to query (e.g. ekonomi, politik, infrastruktur)
+   * Fetches the latest news articles from Google News RSS feed for a specific search query
+   * @param {string} query - The search query term (e.g. "mimika solar antrean")
    * @returns {Promise<Array>} - Array of parsed article objects
    */
-  async searchMimikaNews(sector) {
+  async searchMimikaNews(query = 'mimika') {
     try {
-      let query = 'mimika';
-      if (sector && sector.trim().length > 0) {
-        query = `mimika ${sector.trim()}`;
+      if (!query || query.trim().length === 0) {
+        query = 'mimika';
       }
       
       const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=id-ID&gl=ID&ceid=ID:id`;
@@ -68,9 +67,13 @@ class SearchService {
           }
 
           const publishedAt = dateMatch ? new Date(dateMatch[1]) : new Date();
-          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
           
-          if (publishedAt >= oneDayAgo) {
+          if (publishedAt >= sevenDaysAgo) {
+            const diffTime = Math.abs(new Date() - publishedAt);
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            const publishedAge = diffDays === 0 ? "hari ini" : `${diffDays} hari yang lalu`;
+
             articles.push({
               title: title,
               sourceName: sourceName,
@@ -78,6 +81,7 @@ class SearchService {
               url: linkMatch[1].trim(),
               content: description || title,
               publishedAt: publishedAt,
+              publishedAge: publishedAge,
             });
           }
         }

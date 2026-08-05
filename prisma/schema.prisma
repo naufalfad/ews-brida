@@ -7,41 +7,37 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model RawArticle {
-  id                 String   @id @default(uuid()) @db.Uuid
-  sourceName         String   @map("source_name") @db.VarChar(255)
-  sourceType         String   @map("source_type") @db.VarChar(100)
-  title              String   @db.VarChar(500)
-  content            String   @db.Text
-  url                String   @db.Text
-  publishedAt        DateTime @map("published_at")
-  createdAt          DateTime @default(now()) @map("created_at")
-  
-  // Fields for Credibility and Triangulation
-  credibilityScore   Float?   @map("credibility_score")
-  credibilityFactors Json?    @map("credibility_factors") // Stores individual S, T, C details
-  triangulationGroup String?  @map("triangulation_group") @db.VarChar(100)
-
-  @@map("raw_articles")
-}
-
-model EwsAnalysis {
+model EwsIssue {
   id                 String     @id @default(uuid()) @db.Uuid
-  batchId            String     @map("batch_id") @db.Uuid
-  riskLevel          String     @map("risk_level") @db.VarChar(50) // 'AMAN', 'WASPADA', 'KRITIS/MERAH'
-  primaryCategory    String     @map("primary_category") @db.VarChar(100)
-  targetDistrict     String     @map("target_district") @db.VarChar(255)
-  summary            String     @db.Text
-  predictedImpact    String     @map("predicted_impact") @db.Text
-  recommendedActions Json       @map("recommended_actions") // JSONB
-  responsibleOpd     String     @map("responsible_opd") @db.VarChar(255)
-  isHoaxPotential    Boolean    @map("is_hoax_potential")
-  rawAiResponse      Json       @map("raw_ai_response") // JSONB
-  sourceRefs         Json?      @map("source_refs") // optional array of source article metadata
+  title              String     @db.VarChar(500)
+  description        String     @db.Text
+  sourceName         String     @map("source_name") @db.VarChar(255)
+  sourceUrl          String     @map("source_url") @db.Text
+  sources            Json       @db.JsonB // Daftar media pendukung [{source_name, url}] untuk triangulasi
+  status             String     @db.VarChar(50) // 'DRAFT_SEARCHED', 'VERIFIED_HOAX', 'VERIFIED_CREDIBLE', 'ANALYZED', 'MITIGATED', 'REPORTED'
+  
+  // Tahap 2: Evaluasi Kredibilitas / Cek Hoax
+  isHoax             Boolean?   @map("is_hoax")
+  verificationScore  Float?     @map("verification_score")
+  verificationNotes  String?    @map("verification_notes") @db.Text
+  
+  // Tahap 3: Analisis Mendalam
+  riskLevel          String?    @map("risk_level") @db.VarChar(50) // 'AMAN', 'WASPADA', 'KRITIS/MERAH'
+  primaryCategory    String?    @map("primary_category") @db.VarChar(100)
+  targetDistrict     String?    @map("target_district") @db.VarChar(255)
+  analysisSummary    String?    @map("analysis_summary") @db.Text
+  predictedImpact    String?    @map("predicted_impact") @db.Text
+  
+  // Tahap 4: Mitigasi & Rekomendasi OPD
+  mitigationActions  Json?      @map("mitigation_actions") // Array of strings: ["Aksi 1", "Aksi 2"]
+  responsibleOpd     String?    @map("responsible_opd") @db.VarChar(255)
+  
   createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  
   AuditLogs          AuditLog[]
 
-  @@map("ews_analyses")
+  @@map("ews_issues")
 }
 
 model SystemBaseline {
@@ -55,13 +51,13 @@ model SystemBaseline {
 }
 
 model AuditLog {
-  id         String       @id @default(uuid()) @db.Uuid
-  userId     String       @map("user_id") @db.VarChar(255)
-  actionType String       @map("action_type") @db.VarChar(100)
-  analysisId String?      @map("analysis_id") @db.Uuid
-  analysis   EwsAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
-  notes      String       @db.Text
-  createdAt  DateTime     @default(now()) @map("created_at")
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.VarChar(255)
+  actionType String    @map("action_type") @db.VarChar(100)
+  issueId    String?   @map("issue_id") @db.Uuid
+  issue      EwsIssue? @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  notes      String    @db.Text
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   @@map("audit_logs")
 }

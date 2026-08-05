@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import prisma from '../config/prisma.js';
 
 /**
- * Service to handle modular AI steps using OpenAI API
+ * Service to handle EWS AI processing steps using OpenAI API
  */
 class AiService {
   constructor() {
@@ -12,48 +12,38 @@ class AiService {
   }
 
   /**
-   * FASE 1: Mencari dan memilah berita berpotensi kerusuhan/keributan berdasarkan sektor
-   * @param {Array} articles - Daftar artikel dari hasil penelusuran internet
-   * @param {string} sector - Sektor fokus pencarian (contoh: ekonomi, politik, infrastruktur)
-   * @param {Array} baselines - Daftar baseline acuan dari database
-   * @returns {Promise<Array>} - Array objek berita relevan
+   * TAHAP 1: Query Expansion
+   * Mengubah kueri pencarian sederhana dari pengguna menjadi kata kunci Google News RSS yang optimal.
+   * @param {string} userQuery - Input kueri sederhana dari pengguna (misal: "solar", "lahan")
+   * @returns {Promise<string>} - Kueri pencarian Google News yang dioptimalkan
    */
-  async searchNews(articles, sector = 'umum', baselines = []) {
-    if (!articles || articles.length === 0) {
-      throw new Error('Tidak ada artikel untuk dicari beritanya.');
+  async expandSearchQuery(userQuery) {
+    if (!userQuery || userQuery.trim().length === 0) {
+      return 'mimika';
     }
-
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY tidak dikonfigurasi.');
-    }
-
-    const formattedArticles = articles.map((a, idx) => {
-      return `Article ID: ${idx}
-- Title: ${a.title}
-- Source: ${a.sourceName}
-- URL: ${a.url}
-- Summary: ${a.content}
-----------------------------------------`;
-    }).join('\n');
 
     const systemPrompt = `Anda adalah Asisten Analis EWS (Early Warning System) BRIDA Kabupaten Mimika.
-Tugas utama Anda adalah memilah berita di wilayah Kabupaten Mimika dalam 24 jam terakhir yang memiliki potensi menimbulkan keributan, kecemasan publik, ketidaknyamanan warga, konflik sosial, atau gangguan ketertiban umum di masyarakat Mimika.
+Tugas Anda adalah mengubah kueri pencarian sederhana dari user menjadi kueri pencarian berita Google News yang optimal untuk menemukan berita, isu, atau laporan di Kabupaten Mimika yang berpotensi memicu keributan, kepanikan, kecemasan, kekhawatiran, atau rasa tidak aman di masyarakat.
 
-Pencarian saat ini sedang difokuskan khusus pada sektor: "${sector}".
+Aturan Pencarian EWS Mimika:
+Cari berita atau isu terkait kueri user dari wilayah Kabupaten Mimika / Kota Timika yang bersumber dari:
+1. Media Sosial/Laporan warga (seperti Instagram, X/Twitter, Facebook, TikTok, YouTube, Threads, dll).
+2. Berita Online (portal berita lokal atau nasional yang meliput Mimika).
+3. Isu liar/kasus hangat di masyarakat.
+4. Laporan Kepolisian.
+5. Laporan Pemerintah Daerah.
 
-Aturan Pemrosesan secara Ketat:
-1. Jalankan penyaringan ini HANYA pada daftar artikel yang disediakan di bawah.
-2. Berita HANYA boleh diloloskan jika isi berita tersebut SECARA LANGSUNG berkaitan dengan sektor "${sector}" DAN memiliki potensi memicu keributan, kecemasan publik, ketidaknyamanan, atau konflik di masyarakat Mimika.
-3. JIKA BERITA TIDAK RELEVAN DENGAN SEKTOR "${sector}" ATAU tidak berpotensi menimbulkan keributan/kerusuhan, JANGAN masukkan artikel tersebut ke dalam array "news_reports".
-4. GABUNGKAN BERITA REDUNDAN: Jika beberapa media memberitakan kejadian yang sama persis, gabungkan mereka menjadi SATU entri berita saja di "news_reports". Tuliskan judul dan isi berita utama secara ringkas, kemudian kumpulkan seluruh nama media dan URL tautan aslinya ke dalam array "sources".
-5. Jika tidak ada berita yang memenuhi kriteria di atas, kembalikan array "news_reports" sebagai array kosong [].`;
+Aturan Kueri:
+1. Kueri harus relevan dengan konteks wilayah Kabupaten Mimika atau Kota Timika.
+2. Tambahkan kata kunci sinonim, platform sumber, atau indikator keresahan sosial/emosi publik yang relevan dengan topik.
+3. Kueri akhir harus ringkas dan efektif untuk mesin pencari Google News.
+4. Hasil harus dalam format JSON dengan properti "search_query".`;
 
-    const userPrompt = `Daftar artikel untuk diproses:
-${formattedArticles}`;
+    const userPrompt = `Kueri sederhana user: "${userQuery}"`;
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 1] Menyaring berita EWS sektor "${sector}" menggunakan OpenAI (${modelName})...`);
+      console.log(`[Tahap 1 - Query Expansion] Memproses kueri "${userQuery}" menggunakan OpenAI (${modelName})...`);
 
       const completion = await this.openai.chat.completions.create({
         model: modelName,
@@ -64,54 +54,153 @@ ${formattedArticles}`;
         response_format: {
           type: 'json_schema',
           json_schema: {
-            name: 'ews_news_reports_response',
+            name: 'query_expansion_response',
             strict: true,
             schema: {
               type: 'object',
               properties: {
-                news_reports: {
+                search_query: {
+                  type: 'string',
+                  description: 'Kueri pencarian Google News yang optimal.'
+                }
+              },
+              required: ['search_query'],
+              additionalProperties: false
+            }
+          }
+        }
+      });
+
+      const result = JSON.parse(completion.choices[0].message.content);
+      console.log(`[Tahap 1 - Query Expansion] Hasil ekspansi kueri: "${result.search_query}"`);
+      return result.search_query;
+    } catch (error) {
+      console.error('[AiService] Gagal mengekspansi kueri:', error);
+      // Fallback aman jika terjadi kegagalan
+      return `mimika ${userQuery}`;
+    }
+  }
+
+  /**
+   * TAHAP 1: Baseline-Driven Filtering
+   * Menyaring berita hasil internet yang menyimpang dari kondisi baseline daerah Mimika
+   * dan memiliki potensi menimbulkan kepanikan, kecemasan, rasa tidak aman, atau konflik sosial.
+   * @param {Array} articles - Artikel mentah dari Google News
+   * @param {Array} baselines - Baseline acuan normal dari database
+   * @returns {Promise<Array>} - Daftar Isu EWS Draf yang teridentifikasi
+   */
+  async filterIssuesAgainstBaselines(articles, baselines) {
+    if (!articles || articles.length === 0) {
+      return [];
+    }
+
+    const formattedBaselines = baselines.map((b, idx) => {
+      return `Baseline ${idx + 1} (${b.category}):
+- Kondisi Normal: ${b.baselineValue}
+- Deskripsi: ${b.description}`;
+    }).join('\n\n');
+
+    const formattedArticles = articles.map((a, idx) => {
+      return `Artikel ID: ${idx}
+- Judul: ${a.title}
+- Media/Sumber: ${a.sourceName}
+- Tautan/URL: ${a.url}
+- Waktu Terbit/Umur: ${a.publishedAge || 'tidak diketahui'}
+- Ringkasan: ${a.content}`;
+    }).join('\n\n');
+
+    const systemPrompt = `Anda adalah Asisten Analis EWS (Early Warning System) BRIDA Kabupaten Mimika.
+Tugas Anda adalah menyaring artikel-artikel berita terkini di Kabupaten Mimika dan membandingkannya dengan Baseline Kondisi Normal di bawah ini.
+
+Berikut adalah Baseline Kondisi Normal Kabupaten Mimika:
+=========================================
+${formattedBaselines}
+=========================================
+
+Definisi "Kerusuhan & Keresahan" EWS Mimika:
+Kerusuhan tidak hanya mencakup perusakan fisik atau tindakan arogansi kelompok/individu, tetapi juga mencakup kepanikan, kecemasan, kekhawatiran, serta rasa tidak aman/tidak nyaman yang timbul di tengah masyarakat akibat isu atau kejadian yang beredar.
+
+Aturan Penyaringan & Pengelompokan:
+1. Temukan artikel yang melaporkan kejadian yang menyimpang/anomali dari baseline kondisi normal tersebut.
+2. Penyimpangan tersebut HANYA diloloskan jika berpotensi memicu "Kerusuhan & Keresahan" di kalangan masyarakat Mimika sesuai definisi di atas.
+3. PISAHKAN TOPIK / KEJADIAN YANG BERBEDA: Jangan menggabungkan kejadian atau topik yang berbeda (misalnya: demonstrasi politik/KNPB tidak boleh digabungkan dengan peristiwa pembunuhan/penembakan kriminal, atau masalah sengketa lahan, atau antrean BBM). Setiap topik kejadian yang berdiri sendiri harus dilaporkan sebagai entri isu terpisah agar output bersifat dinamis.
+4. GABUNGKAN HANYA BERITA SEJENIS (TRIANGULASI): Jika terdapat beberapa artikel yang membahas satu kejadian/isu yang sama persis, gabungkan menjadi SATU entri isu:
+   - Tentukan judul isu yang netral dan komprehensif.
+   - Gabungkan ringkasan isi kejadiannya.
+   - Ambil artikel pertama/paling representatif sebagai sumber utama (source_name dan source_url).
+   - Kumpulkan seluruh artikel pendukung (termasuk yang utama) ke dalam array "sources" yang berisi objek {source_name, url, published_age}. Tentukan "published_age" sesuai data umur artikel masukan.
+   - Pada deskripsi isu, sertakan informasi waktu publikasi relatif (contoh: "... [Diterbitkan 3 hari yang lalu]" atau jika triangulasi gabungan beberapa hari berbeda: "... [Diterbitkan antara 1 s.d. 5 hari yang lalu]").
+5. Laporkan setiap peristiwa kejahatan kekerasan penting (seperti penembakan oleh aparat, pembunuhan, atau tindakan main hakim sendiri) sebagai deviasi keamanan EWS karena peristiwa semacam ini di Mimika sangat rentan memicu aksi balasan atau keresahan sosial.
+6. Jika tidak ada artikel berita yang menyimpang dari baseline atau berpotensi memicu kecemasan/keresahan warga, kembalikan array "issues" kosong [].`;
+
+    const userPrompt = `Daftar artikel berita untuk dianalisis:
+=========================================
+${formattedArticles}
+=========================================`;
+
+    try {
+      const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      console.log(`[Tahap 1 - Filtering] Menganalisis ${articles.length} berita terhadap ${baselines.length} baseline menggunakan OpenAI (${modelName})...`);
+
+      const completion = await this.openai.chat.completions.create({
+        model: modelName,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'baseline_filtering_response',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                issues: {
                   type: 'array',
                   items: {
                     type: 'object',
                     properties: {
                       title: {
                         type: 'string',
-                        description: 'Judul berita yang informatif dan representatif.'
+                        description: 'Judul isu yang representatif tentang penyimpangan yang terdeteksi.'
                       },
-                      content: {
+                      description: {
                         type: 'string',
-                        description: 'Ringkasan isi berita.'
+                        description: 'Rangkuman kronologi kejadian atau isu penyimpangan.'
                       },
-                      potential_impact: {
+                      source_name: {
                         type: 'string',
-                        description: 'Potensi dampak buruk, kecemasan, keributan, atau kerusuhan yang akan terjadi di masyarakat Mimika jika tidak ada tindakan/mitigasi.'
+                        description: 'Nama media sumber utama informasi.'
+                      },
+                      source_url: {
+                        type: 'string',
+                        description: 'URL/tautan ke artikel sumber utama.'
                       },
                       sources: {
                         type: 'array',
                         items: {
                           type: 'object',
                           properties: {
-                            source_name: {
+                            source_name: { type: 'string' },
+                            url: { type: 'string' },
+                            published_age: {
                               type: 'string',
-                              description: 'Nama media atau sosial media asal berita.'
-                            },
-                            url: {
-                              type: 'string',
-                              description: 'Link URL berita tersebut.'
+                              description: 'Keterangan waktu terbit relatif artikel ini (contoh: "hari ini" atau "3 hari yang lalu").'
                             }
                           },
-                          required: ['source_name', 'url'],
+                          required: ['source_name', 'url', 'published_age'],
                           additionalProperties: false
                         },
-                        description: 'Kumpulan seluruh sumber dan URL link dari berita ganda/redundant yang membicarakan kejadian yang sama.'
+                        description: 'Kumpulan media yang memberitakan isu yang sama (triangulasi).'
                       }
                     },
-                    required: ['title', 'content', 'potential_impact', 'sources'],
+                    required: ['title', 'description', 'source_name', 'source_url', 'sources'],
                     additionalProperties: false
                   }
                 }
               },
-              required: ['news_reports'],
+              required: ['issues'],
               additionalProperties: false
             }
           }
@@ -119,181 +208,38 @@ ${formattedArticles}`;
       });
 
       const parsedResponse = JSON.parse(completion.choices[0].message.content);
-      return parsedResponse.news_reports;
+      return parsedResponse.issues;
     } catch (error) {
-      console.error('Error in searchNews:', error);
-      throw new Error(`Gagal menyaring berita: ${error.message}`);
+      console.error('[AiService] Gagal memfilter isu terhadap baseline:', error);
+      throw new Error(`Gagal memfilter berita terhadap baseline: ${error.message}`);
     }
   }
 
   /**
-   * FASE 2: Membuat analisis dampak wilayah & tingkat kerawanan berdasarkan baseline
-   * @param {Array} articles - Artikel dengan kredibilitas tinggi
-   * @param {Array} baselines - Dokumen acuan normal system_baselines
-   * @returns {Promise<Object>} - Hasil analisis regional
+   * TAHAP 2: Analisis Kredibilitas & Deteksi Hoax (Placeholder - untuk dikembangkan di Tahap 2)
    */
-  async analyzeRegionalImpact(articles, baselines) {
-    if (!articles || articles.length === 0) {
-      throw new Error('Tidak ada artikel terverifikasi untuk dianalisis.');
-    }
-
-    const formattedBaselines = baselines.map((b, idx) => {
-      return `Baseline ${idx + 1}:
-- Category: ${b.category}
-- Normal Reference: ${b.baselineValue}
-- Description: ${b.description}
-----------------------------------------`;
-    }).join('\n');
-
-    const formattedArticles = articles.map((a, idx) => {
-      return `Article ${idx + 1}:
-- Title: ${a.title}
-- Source: ${a.sourceName} (${a.sourceType})
-- Content: ${a.content}
-- Credibility Score: ${a.credibilityScore} (Group: ${a.triangulationGroup})
-----------------------------------------`;
-    }).join('\n');
-
-    const systemPrompt = `Anda adalah Senior Regional Analyst BRIDA Kabupaten Mimika.
-Tugas Anda adalah menganalisis berita/kejadian hari ini di Mimika, membandingkannya dengan Baseline RKPD dan Kebijakan Bupati/Pemda Mimika untuk mengukur penyimpangan atau ancaman stabilitas.
-
-Berikut adalah acuan target RKPD & Kebijakan Bupati dalam kondisi normal:
-${formattedBaselines}
-
-Aturan Analisis:
-1. Hubungkan kejadian/isu di artikel secara spesifik dengan target RKPD/Kebijakan Bupati yang terganggu.
-2. Tentukan tingkat risiko:
-   - 'AMAN' (Selaras dengan baseline, tidak ada tensi sosial)
-   - 'WASPADA' (Riak konflik minor, isu ramai di media sosial, tidak anarkis)
-   - 'KRITIS/MERAH' (Penyimpangan berat, kerusuhan, demo anarkis, ancaman keamanan senjata, blokade jalan utama/kantor pemerintahan)
-3. Identifikasi distrik (target_district) terdampak di Mimika.
-4. Tulis ringkasan eksekutif (summary) dan prediksi dampak (predicted_impact) secara detail dalam Bahasa Indonesia.`;
-
-    const userPrompt = `Analisis artikel-artikel kredibel berikut:
-${formattedArticles}
-
-Hasilkan laporan analisis tingkat risiko dan dampak regional.`;
-
-    try {
-      const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 2] Mengirim analisis dampak regional ke OpenAI (${modelName})...`);
-
-      const completion = await this.openai.chat.completions.create({
-        model: modelName,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'regional_analysis_response',
-            strict: true,
-            schema: {
-              type: 'object',
-              properties: {
-                risk_level: {
-                  type: 'string',
-                  enum: ['AMAN', 'WASPADA', 'KRITIS/MERAH']
-                },
-                primary_category: {
-                  type: 'string',
-                  description: 'Kategori utama isu (misal: "Infrastruktur", "Keamanan", "Ekonomi/Energi", "Birokrasi")'
-                },
-                target_district: {
-                  type: 'string',
-                  description: 'Distrik terdampak di Mimika (misal: "Mimika Baru", "Poumako", "Seluruh Mimika")'
-                },
-                summary: {
-                  type: 'string',
-                  description: 'Ringkasan eksekutif analisis yang menjelaskan keterkaitan kejadian dengan target RKPD / Kebijakan Bupati.'
-                },
-                predicted_impact: {
-                  type: 'string',
-                  description: 'Prediksi dampak sosial, politik, atau ekonomi jika isu tidak segera ditangani.'
-                }
-              },
-              required: ['risk_level', 'primary_category', 'target_district', 'summary', 'predicted_impact'],
-              additionalProperties: false
-            }
-          }
-        }
-      });
-
-      return {
-        analysis: JSON.parse(completion.choices[0].message.content),
-        rawResponse: completion
-      };
-    } catch (error) {
-      console.error('Error in analyzeRegionalImpact:', error);
-      throw new Error(`Gagal menganalisis dampak regional: ${error.message}`);
-    }
+  async checkHoaxCredibility(issueId) {
+    // Akan diimplementasikan pada Tahap 2
+    console.log(`[AiService] checkHoaxCredibility dipanggil untuk Isu ID: ${issueId}`);
+    return null;
   }
 
   /**
-   * FASE 3: Menghasilkan rekomendasi taktis untuk OPD terkait
-   * @param {Object} analysis - Output dari Fase 2
-   * @returns {Promise<Object>} - Rekomendasi aksi mitigasi & OPD penanggung jawab
+   * TAHAP 3: Analisis Mendalam Dampak Isu (Placeholder - untuk dikembangkan di Tahap 3)
    */
-  async generateOpdRecommendations(analysis) {
-    const systemPrompt = `Anda adalah Staf Ahli Kebijakan Publik Pemda Kabupaten Mimika.
-Tugas Anda adalah menyusun rekomendasi aksi mitigasi taktis yang konkret dan menunjuk OPD (Organisasi Perangkat Daerah) Kabupaten Mimika yang bertanggung jawab untuk menangani isu yang telah dianalisis.
+  async analyzeDeepImpact(issueId) {
+    // Akan diimplementasikan pada Tahap 3
+    console.log(`[AiService] analyzeDeepImpact dipanggil untuk Isu ID: ${issueId}`);
+    return null;
+  }
 
-Detail Analisis Isu:
-- Kategori: ${analysis.primaryCategory}
-- Distrik Terdampak: ${analysis.targetDistrict}
-- Risiko: ${analysis.riskLevel}
-- Ringkasan: ${analysis.summary}
-- Prediksi Dampak: ${analysis.predictedImpact}
-
-Instruksi Rekomendasi:
-1. Rekomendasi tindakan harus sangat konkret, praktis, dan dapat dieksekusi oleh pemerintah daerah Mimika.
-2. Tentukan satu atau beberapa OPD utama yang bertugas (contoh: "Dinas Perhubungan dan Satpol PP Kabupaten Mimika").`;
-
-    const userPrompt = `Rumuskan rekomendasi tindakan mitigasi dinas (OPD) untuk isu di atas dalam Bahasa Indonesia.`;
-
-    try {
-      const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 3] Mengirim permintaan rekomendasi OPD ke OpenAI (${modelName})...`);
-
-      const completion = await this.openai.chat.completions.create({
-        model: modelName,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'opd_recommendations_response',
-            strict: true,
-            schema: {
-              type: 'object',
-              properties: {
-                recommended_actions: {
-                  type: 'array',
-                  items: {
-                    type: 'string'
-                  },
-                  description: 'Daftar aksi taktis penanggulangan (minimal 3 rekomendasi)'
-                },
-                responsible_opd: {
-                  type: 'string',
-                  description: 'Nama OPD Kabupaten Mimika yang menjadi penanggung jawab utama'
-                }
-              },
-              required: ['recommended_actions', 'responsible_opd'],
-              additionalProperties: false
-            }
-          }
-        }
-      });
-
-      return JSON.parse(completion.choices[0].message.content);
-    } catch (error) {
-      console.error('Error in generateOpdRecommendations:', error);
-      throw new Error(`Gagal menghasilkan rekomendasi OPD: ${error.message}`);
-    }
+  /**
+   * TAHAP 4: Mitigasi & Rekomendasi OPD (Placeholder - untuk dikembangkan di Tahap 4)
+   */
+  async generateMitigationRecommendations(issueId) {
+    // Akan diimplementasikan pada Tahap 4
+    console.log(`[AiService] generateMitigationRecommendations dipanggil untuk Isu ID: ${issueId}`);
+    return null;
   }
 }
 

@@ -38,10 +38,17 @@ app.use((req, res, next) => {
 
 // Global Error Handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled Server Error:', err);
-  res.status(500).json({
+  const statusCode = err.status || err.statusCode || 500;
+  
+  if (statusCode >= 500) {
+    console.error('Unhandled Server Error:', err);
+  } else {
+    console.warn(`Client Error [${statusCode}]: ${err.message}`);
+  }
+
+  res.status(statusCode).json({
     success: false,
-    message: 'An internal server error occurred.',
+    message: statusCode >= 500 ? 'An internal server error occurred.' : err.message,
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });

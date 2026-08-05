@@ -3,28 +3,38 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding system baselines...');
+  console.log('Seeding system baselines for Mimika EWS...');
 
   const baselines = [
     {
-      category: 'RKPD - Peningkatan Infrastruktur dan Konektivitas Wilayah',
-      baselineValue: 'Normal: Pembangunan jalan raya, jembatan, pelabuhan Poumako, dan operasional Bandara Mozes Kilangin berjalan tanpa hambatan konflik sosial atau pemblokiran ulayat. Distribusi logistik ke sub-distrik pedalaman berjalan lancar setiap minggu tanpa penutupan jalan trans-timika.',
-      description: 'Kebijakan dan target pemerintah daerah Kabupaten Mimika untuk konektivitas transportasi dan infrastruktur.',
+      category: 'Keamanan & Konflik Suku',
+      baselineValue: 'Normal: Kerukunan antar suku asli (Amungme, Kamoro) serta paguyuban pendatang terjalin harmonis di Mimika. Tidak ada gesekan sosial, tidak ada mobilisasi massa bersenjata tradisional (busur/panah), dan situasi kamtibmas di pemukiman kondusif.',
+      description: 'Acuan stabilitas sosial, toleransi, dan ketertiban umum masyarakat Mimika.'
     },
     {
-      category: 'RKPD - Stabilitas Keamanan, Ketertiban Umum dan Forkopimda',
-      baselineValue: 'Normal: Kondisi aman dicirikan dengan kerukunan antar suku (suku asli Amungme & Kamoro serta paguyuban pendatang). Hubungan Forkopimda solid, patroli keamanan aktif, tidak ada aksi anarkis di depan kantor bupati/pemerintah daerah, dan tidak ada gangguan keamanan bersenjata di wilayah pemukiman/tambang.',
-      description: 'Kebijakan Bupati dan Forkopimda Mimika dalam menjaga stabilitas keamanan daerah.',
+      category: 'Infrastruktur & Akses Jalan',
+      baselineValue: 'Normal: Akses transportasi udara (Bandara Mozes Kilangin), laut (Pelabuhan Poumako), dan darat (Jalan Trans-Timika, Jalan Poros Kuala Kencana) berjalan lancar setiap hari. Tidak ada aksi blokade jalan, pemalangan fasilitas umum, atau sabotase jalur logistik.',
+      description: 'Acuan konektivitas wilayah dan kelancaran distribusi logistik daerah.'
     },
     {
-      category: 'RKPD - Stabilitas Pangan, Energi dan Ekonomi Kerakyatan',
-      baselineValue: 'Normal: Inflasi daerah terkendali, harga bahan pokok di Pasar Sentral Timika stabil. Pasokan energi (BBM penugasan/subsidi) tercukupi tanpa adanya antrean kendaraan yang mengular di SPBU Timika lebih dari 1 hari.',
-      description: 'Kebijakan Bupati terkait ketahanan pangan, pengendalian inflasi, dan pemenuhan kebutuhan energi masyarakat.',
+      category: 'Ketahanan Energi (BBM)',
+      baselineValue: 'Normal: Pasokan dan penyaluran BBM bersubsidi (Solar & Pertalite) serta LPG tercukupi tanpa adanya antrean kendaraan yang mengular di SPBU Timika (SPBU Jalan Komodo, SPBU SP 2, SPBU SP 3) lebih dari 1 hari. Tidak ada penimbunan atau kelangkaan di tingkat pengecer.',
+      description: 'Acuan kelancaran pasokan energi dan stabilitas bahan bakar daerah.'
     },
     {
-      category: 'RKPD - Kualitas Birokrasi dan Pelayanan Publik',
-      baselineValue: 'Normal: Seluruh Organisasi Perangkat Daerah (OPD) di Pusat Pemerintahan SP 3 bekerja normal melayani publik. Tidak ada pemblokiran kantor dinas akibat sengketa jabatan atau hak tanah adat, serta pelayanan kesehatan dan pendidikan dasar berjalan penuh.',
-      description: 'Acuan tata kelola pemerintahan daerah, stabilitas ASN, dan kelancaran pelayanan dasar di Mimika.',
+      category: 'Ketahanan Pangan & Ekonomi Rakyat',
+      baselineValue: 'Normal: Harga bahan pokok (beras, minyak goreng, sagu, umbi-umbian, cabai, ayam) di Pasar Sentral Timika stabil. Pasokan bahan makanan mengalir lancar dari pelabuhan, inflasi terkendali di bawah ambang batas yang ditetapkan Tim Pengendalian Inflasi Daerah (TPID).',
+      description: 'Acuan stabilitas ekonomi makro dan harga kebutuhan hidup masyarakat Mimika.'
+    },
+    {
+      category: 'Hak Adat & Tanah Ulayat',
+      baselineValue: 'Normal: Sengketa lahan atau hak ulayat diselesaikan dengan damai melalui musyawarah adat yang difasilitasi oleh LEMASA (Amungme) dan LEMASKO (Kamoro) bersama Pemda. Tidak ada penutupan paksa lahan pembangunan (pemalangan adat) secara sepihak oleh pemilik ulayat.',
+      description: 'Acuan regulasi konflik pertanahan, hak adat suku asli Mimika.'
+    },
+    {
+      category: 'Pelayanan Birokrasi & Pelayanan Publik',
+      baselineValue: 'Normal: Kantor-kantor Organisasi Perangkat Daerah (OPD) di Pusat Pemerintahan SP 3, puskesmas, dan sekolah dasar beroperasi normal setiap hari kerja. Tidak ada mogok kerja massal oleh ASN, demonstrasi anarkis pegawai, atau penyegelan gedung dinas.',
+      description: 'Acuan kelancaran administrasi pemerintahan dan pelayanan dasar publik.'
     }
   ];
 
@@ -43,48 +53,7 @@ async function main() {
     });
   }
 
-  console.log('Seeding sample raw articles...');
-
-  const sampleArticles = [
-    {
-      sourceName: 'Radar Timika',
-      sourceType: 'Media Lokal',
-      title: 'FKUB Mimika Gelar Pertemuan Rutin Bahas Kerukunan Menjelang Pilkada',
-      content: 'TIMIKA - Forum Kerukunan Umat Beragama (FKUB) Kabupaten Mimika menggelar pertemuan rutin di salah satu hotel di Timika. Pertemuan ini dihadiri oleh tokoh-tokoh agama untuk memastikan situasi keamanan dan toleransi tetap terjaga menjelang tahapan Pilkada 2026. Ketua FKUB mengimbau agar seluruh masyarakat tidak mudah terprovokasi oleh berita-berita hoaks yang beredar di media sosial.',
-      url: 'https://radartimika.co.id/fkub-mimika-gelar-pertemuan-rutin-pilkada',
-      publishedAt: new Date(),
-    },
-    {
-      sourceName: 'Laporan Warga Mimika Baru',
-      sourceType: 'Media Sosial',
-      title: 'Antrean Panjang Kendaraan di SPBU Jalan Komodo Timika Kembali Terjadi',
-      content: 'Dilaporkan adanya antrean panjang kendaraan roda empat dan roda dua di SPBU Jalan Komodo, Mimika Baru sejak pagi ini pukul 07.00 WIT. Beberapa sopir truk mengeluhkan sulitnya mendapatkan solar bersubsidi selama 3 hari terakhir. Sebagian berspekulasi adanya keterlambatan pasokan dari pelabuhan Poumako.',
-      url: 'https://facebook.com/groups/infotimika/posts/992839218',
-      publishedAt: new Date(Date.now() - 3600000 * 2), // 2 hours ago
-    },
-    {
-      sourceName: 'Mimika Info',
-      sourceType: 'Media Lokal',
-      title: 'Aksi Unjuk Rasa Damai Sekelompok Pemuda Terkait Hak Ulayat di Depan Kantor Bupati Mimika',
-      content: 'TIMIKA - Puluhan pemuda melakukan aksi unjuk rasa damai di depan Kantor Pusat Pemerintahan Kabupaten Mimika, SP 3. Mereka menuntut kejelasan ganti rugi pemanfaatan lahan ulayat untuk pembangunan fasilitas umum. Aksi berjalan tertib dengan pengawalan dari Satpol PP dan kepolisian setempat. Perwakilan pengunjuk rasa diterima oleh Asisten Setda untuk mediasi lanjutan.',
-      url: 'https://mimikainfo.com/unjuk-rasa-damai-hak-ulayat-kantor-bupati',
-      publishedAt: new Date(Date.now() - 3600000 * 5), // 5 hours ago
-    }
-  ];
-
-  for (const article of sampleArticles) {
-    // Check if article with same title exists, if not, create it
-    const existing = await prisma.rawArticle.findFirst({
-      where: { title: article.title }
-    });
-    if (!existing) {
-      await prisma.rawArticle.create({
-        data: article
-      });
-    }
-  }
-
-  console.log('Seeding completed successfully.');
+  console.log('Seeding system baselines completed.');
 }
 
 main()
