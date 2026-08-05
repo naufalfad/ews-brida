@@ -17,11 +17,14 @@ class ApifyService {
    */
   async scrapeGoogleSocial(query) {
     try {
-      console.log(`[ApifyService] Menghubungi Cloud Apify untuk query: "${query}"...`);
+      // Pastikan pencarian Apify HANYA mengambil berita dalam 24 jam terakhir
+      const queryWithTime = query.includes('when:1d') ? query : `${query} when:1d`;
+      
+      console.log(`[ApifyService] Menghubungi Cloud Apify untuk query: "${queryWithTime}"...`);
       
       // Memanggil Google Search Scraper Actor di Apify
       const run = await this.client.actor("apify/google-search-scraper").call({
-          queries: query,
+          queries: queryWithTime,
           maxPagesPerQuery: 1,
           resultsPerPage: 15,
           countryCode: "id", // Lokasi Indonesia

@@ -13,7 +13,7 @@ model RawArticle {
   sourceType         String   @map("source_type") @db.VarChar(100)
   title              String   @db.VarChar(500)
   content            String   @db.Text
-  url                String   @db.Text
+  url                String   @unique @db.Text
   publishedAt        DateTime @map("published_at")
   createdAt          DateTime @default(now()) @map("created_at")
   
@@ -64,4 +64,22 @@ model AuditLog {
   createdAt  DateTime     @default(now()) @map("created_at")
 
   @@map("audit_logs")
+}
+
+model TriangulationResult {
+  id                 String   @id @default(uuid()) @db.Uuid
+  title              String   @db.VarChar(500)
+  category           String   @db.VarChar(100)
+  validationStatus   String   @map("validation_status") @db.VarChar(50)
+  credibilityScore   Float    @map("credibility_score")
+  riskLevel          String   @map("risk_level") @db.VarChar(50)
+  sourceName         String   @map("source_name") @db.VarChar(255)
+  url                String   @unique @db.Text
+  factualComparison  String   @map("factual_comparison") @db.Text
+  aiReasoning        Json     @map("ai_reasoning")
+  triangulationGroup String   @map("triangulation_group") @db.VarChar(100)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("triangulation_results")
 }

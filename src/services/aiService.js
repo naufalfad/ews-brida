@@ -11,7 +11,7 @@ class AiService {
     });
   }
 
- /**
+  /**
    * FASE 0: Menghasilkan kata kunci pencarian berita/sosmed real-time HARI INI untuk Mimika
    * @param {Array} baselines - Data acuan normal dari database
    * @returns {Promise<Array<string>>} - Array kata kunci pencarian presisi
@@ -19,7 +19,6 @@ class AiService {
   async generateSearchQueries(baselines = []) {
     const formattedBaselines = baselines.map(b => `- ${b.category}: ${b.baselineValue}`).join('\n');
     
-    // Ambil tanggal hari ini secara dinamis (Format: YYYY-MM-DD / Bahasa Indonesia)
     const todayDate = new Date().toLocaleDateString('id-ID', {
       day: 'numeric',
       month: 'long',
@@ -29,34 +28,22 @@ class AiService {
     const systemPrompt = `Anda adalah Spesialis Pengumpul Data Intelijen & Early Warning System (EWS) Kesbangpol Kabupaten Mimika.
 
 TUGAS UTAMA:
-Hasilkan 6 hingga 8 kata kunci pencarian (search queries) yang sangat presisi, tajam, dan terstruktur untuk melacak berita online serta postingan media sosial terbaru yang terbit HARI INI (${todayDate}) terkait potensi konflik sosial, gangguan Kamtibmas, dan keresahan warga di wilayah Kabupaten Mimika.
-
-ATURAN WAKTU & KETEPATAN (STRICT REAL-TIME):
-1. FOKUS HARI INI: Pencarian WAJIB diarahkan untuk menangkap kejadian, perkembangan, dan isu terkini HARI INI (${todayDate}). Gunakan kata kunci temporal seperti "hari ini", "terbaru", "agustus 2026", atau penanda kejadian terkini.
-2. JANGAN menghasilkan kata kunci umum tanpa konteks lokasi/waktu yang berisiko menarik artikel lama.
+Hasilkan 6 hingga 8 kata kunci pencarian (search queries) yang sangat presisi dan terstruktur untuk melacak berita online serta postingan media sosial terbaru yang terbit HARI INI (${todayDate}) terkait potensi konflik sosial, gangguan Kamtibmas, dan keresahan warga di wilayah Kabupaten Mimika.
 
 KATEGORI ISU YANG HARUS DICAKUP:
-1. PANGAN & SEMBAKO: Kenaikan harga sembako ekstrem, lonjakan harga beras/minyak goreng, kelangkaan stok pangan di distrik terpencil (Agimuga, Jita, Mapurujaya, Mimika Barat, dll).
-2. AKSESIBILITAS & INFRASTRUKTUR: Pemalangan jalan, pemblokiran jalur utama Tembagapura/Kwamki Narama/SP3, penutupan area vital, dermaga, atau kantor pemerintahan.
+1. PANGAN & SEMBAKO: Kenaikan harga sembako ekstrem, lonjakan harga beras/minyak goreng di distrik terpencil (Agimuga, Jita, Mapurujaya, dll).
+2. AKSESIBILITAS & INFRASTRUKTUR: Pemalangan jalan, pemblokiran jalur utama Tembagapura/Kwamki Narama/SP3, penutupan kantor pemerintah/area vital.
 3. BBM & ENERGI: Antrean panjang kendaraan di SPBU Komodo/Nusalima, kelangkaan solar/pertalite/minyak tanah di Timika.
-4. GESEKAN SOSIAL & SARA: Ujaran kebencian, isu SARA, bentrokan antar-warga/kelompok, rumor politik lokal/Pilkada Papua Tengah, dan narasi provokatif di media sosial.
-5. DAMPAK ISU NASIONAL: Isu keamanan/kebijakan nasional di Papua Tengah yang berpotensi memicu demonstrasi atau keresahan lokal di Timika.
+4. GESEKAN SOSIAL & SARA: Ujaran kebencian, isu SARA, bentrokan antar-warga/kelompok, rumor politik lokal/Pilkada Papua Tengah, dan narasi provokatif.
 
-ATURAN FORMULASI KATA KUNCI (BEST PRACTICE):
-- Sertakan nama entitas lokasi spesifik: "Mimika", "Timika", "Tembagapura", "Agimuga", "Kwamki Narama", "SP3", "Mapurujaya", atau "Papua Tengah".
-- Gunakan variasi kata kunci pencarian publik alami DAN kombinasi Search Operators/Google Dorking sederhana (misal: 'beras mahal agimuga timika hari ini' atau 'site:detik.com "Timika" "pemalangan"').
-- Panjang query ideal adalah 3 hingga 6 kata agar efektif dieksekusi oleh Google API, SerpAPI, maupun Scraper Search.`;
+ATURAN FORMULASI:
+- Sertakan entitas lokasi spesifik: "Mimika", "Timika", "Tembagapura", "Agimuga", "Kwamki Narama", "SP3", "Mapurujaya", atau "Papua Tengah".
+- Gunakan kombinasi kata kunci alami DAN Search Operators/Google Dorking sederhana (misal: 'beras mahal agimuga timika hari ini' atau 'site:seputarpapua.com "Timika" "pemalangan"').`;
 
-    const userPrompt = `Tanggal Pencarian Real-time: ${todayDate}
-Acuan Baseline Normal Saat Ini:
-${formattedBaselines}
-
-Hasilkan array kata kunci pencarian terstruktur khusus untuk berita dan postingan HARI INI.`;
+    const userPrompt = `Tanggal Pencarian Real-time: ${todayDate}\nAcuan Baseline Normal:\n${formattedBaselines}`;
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 0] Generasi Query Pencarian Real-time (${todayDate}) ke OpenAI (${modelName})...`);
-
       const completion = await this.openai.chat.completions.create({
         model: modelName,
         messages: [
@@ -74,7 +61,7 @@ Hasilkan array kata kunci pencarian terstruktur khusus untuk berita dan postinga
                 queries: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'Daftar kata kunci pencarian spesifik untuk Google Custom Search / SerpAPI yang menargetkan berita hari ini'
+                  description: 'Daftar kata kunci pencarian spesifik untuk Google Custom Search / SerpAPI'
                 }
               },
               required: ['queries'],
@@ -88,64 +75,78 @@ Hasilkan array kata kunci pencarian terstruktur khusus untuk berita dan postinga
       return parsedResponse.queries;
     } catch (error) {
       console.error('Error in generateSearchQueries:', error);
-      
-      // Fallback kata kunci dinamis jika API gagal
-      const currentYear = new Date().getFullYear();
       return [
         `berita pemalangan jalan timika mimika hari ini`,
-        `harga beras mahal distrik agimuga timika ${currentYear}`,
+        `harga beras mahal distrik agimuga timika`,
         `kelangkaan bbm solar antrean spbu timika hari ini`,
-        `demo bentrok warga mimika papua tengah terbaru`,
-        `site:seputarpapua.com "Timika" "keresahan"`
+        `demo bentrok warga mimika papua tengah terbaru`
       ];
     }
   }
 
   /**
-   * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan prompt user dan baseline
-   * @param {Array} articles - Daftar artikel dari hasil penelusuran internet
-   * @param {Array} baselines - Daftar baseline acuan dari database
-   * @returns {Promise<Array>} - Array objek berita relevan
+   * FASE 1: Menganalisis Kredibilitas, Membenturkan Baseline (Triangulasi), & Menyaring Isu
+   * @param {Array} articles - Daftar artikel/postingan mentah dari database (RawArticle)
+   * @param {Array} baselines - Data acuan normal dari database Prisma (system_baselines)
+   * @returns {Promise<Array>} - Array berita terverifikasi beserta hasil triangulasi
    */
   async evaluateNewsCredibility(articles, baselines = []) {
     if (!articles || articles.length === 0) {
-      throw new Error('Tidak ada artikel untuk dinilai kredibilitasnya.');
+      throw new Error('Tidak ada artikel/postingan untuk dinilai kredibilitasnya.');
     }
 
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY tidak dikonfigurasi.');
     }
 
+    // Format data baseline sebagai RAG Context
     const formattedBaselines = baselines.map((b, idx) => {
       return `Baseline Acuan ${idx + 1}:
 - Kategori: ${b.category}
-- Kondisi Normal: ${b.baselineValue}`;
+- Kondisi Normal/HET/Target: ${b.baselineValue}
+- Deskripsi/Aturan: ${b.description || '-'}`;
     }).join('\n\n');
 
+    // Format artikel mentah dari DB
     const formattedArticles = articles.map((a, idx) => {
-      return `Article Temp ID: ${idx}
-- Title: ${a.title}
-- Source: ${a.sourceName} (${a.sourceType})
+      return `[Article DB ID: ${a.id || idx}]
+- Judul/Post: ${a.title}
+- Sumber: ${a.sourceName} (${a.sourceType || 'NEWS_PORTAL'})
 - URL: ${a.url}
-- Content: ${a.content}
+- Konten/Snippet: ${a.content}
 ----------------------------------------`;
     }).join('\n');
 
-    const systemPrompt = `berikan saya berita hari ini untuk wilayah mimika yang memiliki potensi menyebabkan kerusuhan di wilayah mimika. berikan saya sumber sumber muculnya berita tersebut, cari di sosial media(FB, IG, X, TikTok, YouTube, Threads), atau media yang memiliki kredibilitas tinggi (portal.mimikakab.go.id, salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com, tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co, Polri, Pemda SP 3, Humas) sertakan juga link referensi dari berita yang ditemukan.
+    const systemPrompt = `Anda adalah Engine Analis Intelijen & Fact-Checking Triangulasi EWS (Early Warning System) Kesbangpol Kabupaten Mimika.
 
-Sebagai acuan penentu potensi kerusuhan, gunakan BASELINE keadaan aman/target pemerintah Kabupaten Mimika berikut sebagai pembanding:
+TUGAS UTAMA:
+Evaluasi secara ketat DAFTAR ARTIKEL / POSTINGAN di bawah ini. Benturkan klaim dalam artikel tersebut dengan DATA BASELINE RESMI PEMKAB MIMIKA (RAG CONTEXT) untuk menentukan apakah berita/postingan tersebut merupakan FAKTA, HOAKS, PROVOKASI, atau UNVERIFIED.
+
+DATA BASELINE PEMKAB MIMIKA (RAG CONTEXT):
 ${formattedBaselines}
 
-Aturan Pemrosesan:
-1. Jalankan pencarian ini hanya pada daftar artikel yang disediakan di bawah.
-2. Jika artikel tidak memenuhi instruksi pencarian tersebut (tidak berpotensi memicu kerusuhan di Mimika berdasarkan perbandingan dengan baseline), JANGAN masukkan artikel tersebut ke dalam array "news_reports".`;
+ATURAN EVALUASI & TRIANGULASI (STRICT RULES):
+1. DILARANG MEMBUAT BERITA PALSU: HANYA proses artikel yang disediakan dalam input "Daftar Artikel".
+2. Tentukan "category":
+   - "PANGAN": Terkait harga beras, minyak, sembako, stok Bulog.
+   - "AKSESIBILITAS": Terkait pemalangan jalan, blokade Tembagapura/Agimuga, penutupan kantor.
+   - "BBM": Terkait antrean SPBU, kelangkaan solar/pertalite/minyak tanah.
+   - "GESEKAN_SOSIAL": Terkait ujaran kebencian, bentrokan warga, isu SARA, atau provokasi politik.
+3. Tentukan "validation_status":
+   - "FAKTA": Klaim sesuai/didukung oleh data baseline atau laporan lapangan yang valid.
+   - "HOAKS": Klaim terbukti salah, memanipulasi data harga/stok, atau menyebarkan rumor bohong.
+   - "PROVOKASI": Narasi sengaja mengajak tindakan anarkis, pemalangan, atau kerusuhan.
+   - "UNVERIFIED": Belum ada data baseline/bukti pendukung yang cukup.
+4. Hitung "credibility_score" (0.00 hingga 1.00) berdasarkan keandalan sumber dan kesesuaian fakta baseline.
+5. Tentukan "risk_level": "MERAH" (Kritis/Gawat), "ORANYE" (Tinggi), "KUNING" (Sedang), "HIJAU" (Aman).
+6. Tuliskan "ai_reasoning": WAJIB berisi persis 3 poin penalaran logis mengapa status validasi tersebut dipilih.
+7. Jika artikel sama sekali TIDAK berpotensi menimbulkan keresahan/konflik sosial di Mimika, JANGAN masukkan artikel tersebut ke dalam hasil output.`;
 
-    const userPrompt = `Daftar artikel untuk diproses:
-${formattedArticles}`;
+    const userPrompt = `Daftar Artikel Mentah untuk Evaluasi & Triangulasi:\n${formattedArticles}`;
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 1] Menyaring berita berpotensi kerusuhan ke OpenAI (${modelName})...`);
+      console.log(`[Fase 1] Menganalisis kredibilitas & triangulasi RAG (${modelName})...`);
 
       const completion = await this.openai.chat.completions.create({
         model: modelName,
@@ -156,83 +157,83 @@ ${formattedArticles}`;
         response_format: {
           type: 'json_schema',
           json_schema: {
-            name: 'news_filtering_response',
+            name: 'news_triangulation_response',
             strict: true,
             schema: {
               type: 'object',
               properties: {
-                news_reports: {
+                verified_reports: {
                   type: 'array',
                   items: {
                     type: 'object',
                     properties: {
                       article_id: {
                         type: 'string',
-                        description: 'ID artikel asli'
+                        description: 'ID artikel asli dari DB input'
                       },
                       title: {
                         type: 'string',
-                        description: 'Judul berita'
+                        description: 'Judul berita atau ringkasan klaim warga'
                       },
-                      content: {
+                      category: {
                         type: 'string',
-                        description: 'Isi atau konten berita'
+                        enum: ['PANGAN', 'AKSESIBILITAS', 'BBM', 'GESEKAN_SOSIAL'],
+                        description: 'Kategori utama isu'
                       },
-                      source: {
+                      validation_status: {
                         type: 'string',
-                        description: 'Sumber berita'
+                        enum: ['FAKTA', 'HOAKS', 'PROVOKASI', 'UNVERIFIED'],
+                        description: 'Status hasil triangulasi kebenaran isu'
+                      },
+                      credibility_score: {
+                        type: 'number',
+                        description: 'Skor kredibilitas klaim (0.00 hingga 1.00)'
+                      },
+                      risk_level: {
+                        type: 'string',
+                        enum: ['MERAH', 'ORANYE', 'KUNING', 'HIJAU'],
+                        description: 'Tingkat kerawanan potensi konflik'
+                      },
+                      source_name: {
+                        type: 'string',
+                        description: 'Nama media / platform sosmed'
                       },
                       url: {
                         type: 'string',
-                        description: 'URL berita'
+                        description: 'URL sumber berita/postingan'
                       },
-                      potential_chaos_explanation: {
+                      factual_comparison: {
                         type: 'string',
-                        description: 'Penjelasan mengapa berita ini berpotensi memicu kerusuhan'
+                        description: 'Ringkasan perbandingan klaim warga vs fakta baseline Pemkab'
+                      },
+                      ai_reasoning: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: '3 poin penalaran logis AI'
                       },
                       triangulation_group: {
                         type: 'string',
-                        description: 'Nama/Label grup isu yang sama (misal: "Antrean BBM SPBU Komodo", "Pilkada Mimika 2026")'
-                      },
-                      supporting_sources: {
-                        type: 'array',
-                        items: {
-                          type: 'object',
-                          properties: {
-                            source_name: {
-                              type: 'string',
-                              description: 'Nama media'
-                            },
-                            url: {
-                              type: 'string',
-                              description: 'Link URL media'
-                            },
-                            title: {
-                              type: 'string',
-                              description: 'Judul artikel pendukung'
-                            }
-                          },
-                          required: ['source_name', 'url', 'title'],
-                          additionalProperties: false
-                        },
-                        description: 'Daftar berita lain dalam batch yang membahas isu sejenis (jika ada)'
+                        description: 'Label kelompok isu sejenis (misal: "Isu Beras Agimuga", "Pemalangan Jalan Tembagapura")'
                       }
                     },
                     required: [
                       'article_id',
                       'title',
-                      'content',
-                      'source',
+                      'category',
+                      'validation_status',
+                      'credibility_score',
+                      'risk_level',
+                      'source_name',
                       'url',
-                      'potential_chaos_explanation',
-                      'triangulation_group',
-                      'supporting_sources'
+                      'factual_comparison',
+                      'ai_reasoning',
+                      'triangulation_group'
                     ],
                     additionalProperties: false
                   }
                 }
               },
-              required: ['news_reports'],
+              required: ['verified_reports'],
               additionalProperties: false
             }
           }
@@ -240,10 +241,10 @@ ${formattedArticles}`;
       });
 
       const parsedResponse = JSON.parse(completion.choices[0].message.content);
-      return parsedResponse.news_reports;
+      return parsedResponse.verified_reports;
     } catch (error) {
       console.error('Error in evaluateNewsCredibility:', error);
-      throw new Error(`Gagal menyaring berita: ${error.message}`);
+      throw new Error(`Gagal memvalidasi kredibilitas isu: ${error.message}`);
     }
   }
 

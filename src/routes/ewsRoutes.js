@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { 
   ingestNews,
-  processNews, 
+  triangulateNews, 
   runRegionalAnalysis, 
   generateRecommendations, 
   generatePdfReport,
@@ -16,11 +16,11 @@ import {
 
 const router = Router();
 
-// TAHAP 1: Ingestion & Smart Scoping Engine
+// TAHAP 0: Ingestion & Smart Scoping Engine
 router.post('/ingest-news', ingestNews);
 
-// FASE 1: Kredibilitas & Triangulasi Berita Hari Ini
-router.post('/process-news', processNews);
+// TAHAP 1: RAG Assembly & Triangulation
+router.post('/triangulate-news', triangulateNews);
 
 // FASE 2: Buat Analisis Dampak RKPD
 router.post('/run-regional-analysis', runRegionalAnalysis);

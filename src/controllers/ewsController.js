@@ -4,14 +4,16 @@ import aiService from '../services/aiService.js';
 import pdfService from '../services/pdfService.js';
 import searchService from '../services/searchService.js';
 import baselineService from '../services/baselineService.js';
+import { assembleContextForTriangulation } from '../services/context-assembly.service.js';
 
 /**
  * Controller Tahap 1: Ingest & Filter Raw News
  */
 export async function ingestNews(req, res) {
   try {
+    console.log('[Tahap 0] Memulai alur Ingestion & Database Persistence...');
+
     // 1. Ambil Data Baseline acuan
-    // Get baselines via Prisma directly if baselineService.getBaselines doesn't exist, but we will try baselineService or prisma
     let baselines = [];
     if (baselineService && baselineService.getBaselines) {
       baselines = await baselineService.getBaselines();
@@ -19,151 +21,134 @@ export async function ingestNews(req, res) {
       baselines = await prisma.systemBaseline.findMany();
     }
 
-    // 2. Generasi Query Pencarian via OpenAI (Fase 0)
+    // 2. AI menghasilkan kata kunci pencarian (Fase 0)
     const queries = await aiService.generateSearchQueries(baselines);
+    console.log(`[Tahap 0] Generated Queries (${queries.length}):`, queries);
 
-    // 3. Ambil Berita Mentah via Search Engine API
+    // 3. Ambil berita real-time via search service
     const rawArticles = await searchService.executeBatchSearch(queries);
+    console.log(`[Tahap 0] Total Berita Unik Ditemukan: ${rawArticles.length}`);
+
+    if (rawArticles.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'Ingestion selesai, namun tidak ada berita baru yang ditemukan hari ini.',
+        data: { generatedQueries: queries, totalSaved: 0, articles: [] }
+      });
+    }
+
+    // 4. SIMPAN KE DATABASE PRISMA (Tabel RawArticle)
+    // Gunakan transaction/upsert agar jika URL sudah ada, data tidak crash/duplikat
+    const savedArticles = [];
+    for (const article of rawArticles) {
+      const savedItem = await prisma.rawArticle.upsert({
+        where: { url: article.url },
+        update: {
+          title: article.title,
+          content: article.content,
+          sourceName: article.sourceName
+        },
+        create: {
+          title: article.title,
+          content: article.content,
+          sourceName: article.sourceName,
+          sourceType: article.sourceType,
+          url: article.url,
+          publishedAt: new Date()
+        }
+      });
+      savedArticles.push(savedItem);
+    }
+
+    console.log(`[Tahap 0] Berhasil menyimpan ${savedArticles.length} berita ke database!`);
 
     return res.status(200).json({
       success: true,
-      message: `Tahap 1 Berhasil: Mengumpulkan ${rawArticles.length} artikel terfilter untuk wilayah Mimika.`,
+      message: `Tahap 0 Berhasil: ${savedArticles.length} berita berhasil dikumpulkan dan disimpan ke database.`,
       data: {
         generatedQueries: queries,
-        totalArticlesFound: rawArticles.length,
-        articles: rawArticles
+        totalSaved: savedArticles.length,
+        articles: savedArticles
       }
     });
   } catch (error) {
     console.error('Error in ingestNews:', error);
     return res.status(500).json({
       success: false,
-      error: `Gagal menjalankan Ingestion Tahap 1: ${error.message}`
+      error: `Gagal menjalankan Ingestion Tahap 0: ${error.message}`
     });
   }
 }
 
 /**
- * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan live penelusuran internet
- * POST /api/v1/ews/process-news
+ * Controller Tahap 1: Triangulasi & Fact-Checking Isu
+ * POST /api/v1/ews/triangulate-news
  */
-export const processNews = async (req, res) => {
+export async function triangulateNews(req, res) {
   try {
-    console.log(`[Fase 1] Memulai pencarian berita terkini Mimika langsung dari internet...`);
+    console.log('[Tahap 1] Memulai proses Triangulasi & Fact-Checking...');
 
-    // 1. Ambil berita real-time dari internet menggunakan searchService (Google News RSS)
-    const liveArticles = await searchService.searchMimikaNews();
+    // 1. Ambil artikel mentah DB dan data baseline RAG Context
+    const { rawArticles, baselines } = await assembleContextForTriangulation();
 
-    if (liveArticles.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Gagal mengambil berita terkini dari internet. Silakan coba beberapa saat lagi.',
+    if (!rawArticles || rawArticles.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'Tidak ada berita mentah di database untuk ditriangulasi. Jalankan Tahap 0 terlebih dahulu.',
+        data: []
       });
     }
 
-    // 2. Ambil acuan baseline (bisa dari request body kustom, pilihan database, atau seluruhnya di DB)
-    const { baselines: customBaselines, baselineIds } = req.body;
-    let baselines = [];
+    // 2. Jalankan Triangulasi AI via OpenAI Structured Output
+    const verifiedReports = await aiService.evaluateNewsCredibility(rawArticles, baselines);
+    console.log(`[Tahap 1] Berhasil memvalidasi ${verifiedReports.length} laporan.`);
 
-    if (baselineIds && Array.isArray(baselineIds) && baselineIds.length > 0) {
-      baselines = await prisma.systemBaseline.findMany({
-        where: { id: { in: baselineIds } }
+    // 3. SIMPAN HASIL TRIANGULASI KE DATABASE PRISMA (Tabel TriangulationResult)
+    const savedTriangulations = [];
+    for (const report of verifiedReports) {
+      const savedItem = await prisma.triangulationResult.upsert({
+        where: { url: report.url },
+        update: {
+          title: report.title,
+          category: report.category,
+          validationStatus: report.validation_status,
+          credibilityScore: report.credibility_score,
+          riskLevel: report.risk_level,
+          sourceName: report.source_name,
+          factualComparison: report.factual_comparison,
+          aiReasoning: report.ai_reasoning,
+          triangulationGroup: report.triangulation_group,
+          updatedAt: new Date()
+        },
+        create: {
+          title: report.title,
+          category: report.category,
+          validationStatus: report.validation_status,
+          credibilityScore: report.credibility_score,
+          riskLevel: report.risk_level,
+          sourceName: report.source_name,
+          url: report.url,
+          factualComparison: report.factual_comparison,
+          aiReasoning: report.ai_reasoning,
+          triangulationGroup: report.triangulation_group
+        }
       });
-    }
-
-    if (customBaselines && Array.isArray(customBaselines) && customBaselines.length > 0) {
-      const formattedCustom = customBaselines.map(b => ({
-        category: b.category,
-        baselineValue: b.baselineValue || b.baseline_value,
-        description: b.description || 'Baseline Ad-Hoc'
-      }));
-      baselines = baselines.concat(formattedCustom);
-    }
-
-    if (baselines.length === 0) {
-      baselines = await prisma.systemBaseline.findMany();
-    }
-
-    // 3. Panggil AI Service untuk menyaring dan mencocokkan berita dengan baseline
-    const newsReports = await aiService.evaluateNewsCredibility(liveArticles, baselines);
-
-    console.log(`[Fase 1] AI menyaring ${newsReports.length} berita berpotensi kerusuhan dari ${liveArticles.length} total berita hasil pencarian.`);
-
-    // 4. Simpan berita yang relevan saja ke database raw_articles
-    const processedArticles = [];
-    for (const report of newsReports) {
-      // Ambil index artikel asli menggunakan temp ID dari AI
-      const idx = parseInt(report.article_id, 10);
-      if (isNaN(idx) || idx < 0 || idx >= liveArticles.length) {
-        console.warn(`[Fase 1] Mengabaikan report dengan index tidak valid: ${report.article_id}`);
-        continue;
-      }
-
-      const originalArticle = liveArticles[idx];
-
-      // Periksa duplikasi judul berita di database untuk menghindari duplikasi record
-      let dbArticle = await prisma.rawArticle.findFirst({
-        where: { title: originalArticle.title }
-      });
-
-      if (!dbArticle) {
-        // Masukkan artikel baru yang lolos penyaringan EWS
-        dbArticle = await prisma.rawArticle.create({
-          data: {
-            title: originalArticle.title,
-            sourceName: originalArticle.sourceName,
-            sourceType: originalArticle.sourceType,
-            url: originalArticle.url,
-            content: originalArticle.content,
-            publishedAt: originalArticle.publishedAt,
-            credibilityScore: 100.0,
-            triangulationGroup: report.triangulation_group,
-            credibilityFactors: {
-              content: report.content,
-              source: report.source,
-              url: report.url,
-              potentialChaosExplanation: report.potential_chaos_explanation,
-              supportingSources: report.supporting_sources,
-              isRelevantToEws: true
-            }
-          }
-        });
-      } else {
-        // Jika sudah ada, update parameter EWS terbarunya
-        dbArticle = await prisma.rawArticle.update({
-          where: { id: dbArticle.id },
-          data: {
-            credibilityScore: 100.0,
-            triangulationGroup: report.triangulation_group,
-            credibilityFactors: {
-              content: report.content,
-              source: report.source,
-              url: report.url,
-              potentialChaosExplanation: report.potential_chaos_explanation,
-              supportingSources: report.supporting_sources,
-              isRelevantToEws: true
-            }
-          }
-        });
-      }
-
-      processedArticles.push(dbArticle);
+      savedTriangulations.push(savedItem);
     }
 
     return res.status(200).json({
       success: true,
-      message: `Penyaringan berita selesai. Ditemukan ${processedArticles.length} berita berpotensi kerusuhan.`,
-      data: processedArticles
+      message: `Tahap 1 Berhasil: ${savedTriangulations.length} laporan berhasil ditriangulasi dan disimpan ke database.`,
+      data: savedTriangulations
     });
   } catch (error) {
-    console.error('Error in processNews controller:', error);
+    console.error('Error in triangulateNews:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal memproses dan menyaring berita terkini.',
-      error: error.message,
+      error: `Gagal menjalankan Triangulasi Tahap 1: ${error.message}`
     });
   }
-};
+}
 
 /**
  * FASE 2: Membuat analisis dampak & kerawanan daerah terhadap RKPD berdasarkan berita kredibel

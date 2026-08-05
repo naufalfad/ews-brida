@@ -18,9 +18,9 @@ class SearchService {
   }
 
   /**
-   * Eksekusi pencarian batch berdasarkan array query dari AI
+   * Eksekusi batch search & hapus duplikasi URL
    * @param {Array<string>} queries 
-   * @returns {Promise<Array>} Array artikel mentah unik (tanpa duplikat URL)
+   * @returns {Promise<Array>} Array artikel bersih tanpa duplikat
    */
   async executeBatchSearch(queries) {
     let rawArticles = [];
@@ -44,19 +44,19 @@ class SearchService {
         }
         
         for (const item of results) {
-          if (!seenUrls.has(item.url)) {
+          if (item.url && !seenUrls.has(item.url)) {
             seenUrls.add(item.url);
             rawArticles.push({
-              title: item.title,
+              title: item.title || 'Tanpa Judul',
               sourceName: item.sourceName || 'Media Online',
               sourceType: item.sourceType || 'NEWS_PORTAL',
               url: item.url,
-              content: item.snippet || item.content
+              content: item.snippet || item.content || ''
             });
           }
         }
       } catch (err) {
-        console.warn(`Pencarian gagal untuk query: "${query}"`, err.message);
+        console.warn(`Error pencarian query: "${query}"`, err.message);
       }
     }
 
@@ -95,9 +95,11 @@ class SearchService {
    */
   async fetchFromSearchEngine(query) {
     try {
-      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=id-ID&gl=ID&ceid=ID:id`;
+      // Tambahkan 'when:1d' secara otomatis agar Google News HANYA mencari berita 24 jam terakhir (Hari Ini)
+      const queryWithTime = query.includes('when:1d') ? query : `${query} when:1d`;
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(queryWithTime)}&hl=id-ID&gl=ID&ceid=ID:id`;
       
-      console.log(`[SearchService] Menghubungi Google News RSS untuk mencari isu terkini di "${query}"...`);
+      console.log(`[SearchService] Menghubungi Google News RSS untuk mencari isu terkini di "${queryWithTime}"...`);
       
       const response = await fetch(url);
       if (!response.ok) {
