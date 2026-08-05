@@ -1,3 +1,5 @@
+import apifyService from './apifyService.js';
+
 /**
  * Service to fetch real-time news about Mimika using Google News RSS Feed
  */
@@ -8,7 +10,91 @@ class SearchService {
    */
   async searchMimikaNews() {
     try {
-      const query = 'mimika';
+      return await this.fetchFromSearchEngine('mimika');
+    } catch (error) {
+      console.error('[SearchService] Gagal memproses live search berita:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Eksekusi pencarian batch berdasarkan array query dari AI
+   * @param {Array<string>} queries 
+   * @returns {Promise<Array>} Array artikel mentah unik (tanpa duplikat URL)
+   */
+  async executeBatchSearch(queries) {
+    let rawArticles = [];
+    const seenUrls = new Set();
+    
+    // KARENA INI UNTUK TESTING: Kita paksa injeksi query sosmed agar pasti dijalankan
+    // tanpa bergantung sepenuhnya pada output AI yang mungkin tidak menyebut 'site:'
+    if (!queries.some(q => q.includes('site:'))) {
+      queries.push('site:facebook.com "mimika"');
+    }
+
+    for (const query of queries) {
+      try {
+        let results = [];
+        // Jika query mengandung 'site:', gunakan Apify untuk mencari di Google Web
+        if (query.includes('site:')) {
+          results = await apifyService.scrapeGoogleSocial(query);
+        } else {
+          // Jika tidak, gunakan Google News RSS untuk media online
+          results = await this.fetchFromSearchEngine(query); 
+        }
+        
+        for (const item of results) {
+          if (!seenUrls.has(item.url)) {
+            seenUrls.add(item.url);
+            rawArticles.push({
+              title: item.title,
+              sourceName: item.sourceName || 'Media Online',
+              sourceType: item.sourceType || 'NEWS_PORTAL',
+              url: item.url,
+              content: item.snippet || item.content
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`Pencarian gagal untuk query: "${query}"`, err.message);
+      }
+    }
+
+    // Filter ketat agar HANYA berita yang relevan dengan potensi konflik/keresahan yang lolos
+    const filteredArticles = this.filterCriticalNews(rawArticles);
+    console.log(`[SearchService] Hasil penyaringan ketat: ${filteredArticles.length} berita/sosmed kritis ditemukan dari ${rawArticles.length} total tangkapan.`);
+    
+    return filteredArticles;
+  }
+
+  /**
+   * Menyaring artikel hanya untuk isu keamanan, keresahan, dan kelangkaan
+   * @param {Array} articles 
+   * @returns {Array}
+   */
+  filterCriticalNews(articles) {
+    const criticalKeywords = [
+      'kerusuhan', 'keresahan', 'demo ', 'demonstrasi', 'ricuh', 'bentrok', 
+      'pemalangan', 'palang', 'blokir', 'mahal', 'langka', 'antre', 'antrean', 
+      'mogok', 'protes', 'konflik', 'senjata', 'pembunuhan', 'penembakan', 
+      'kkb', 'opm', 'siaga', 'waspada', 'sara', 'provokasi', 'unjuk rasa', 
+      'tewas', 'luka', 'bakar', 'kamtibmas', 'bbm', 'beras'
+    ];
+
+    return articles.filter(article => {
+      const textToSearch = (article.title + " " + article.content).toLowerCase();
+      // Pastikan setidaknya satu kata kunci kritis ada di judul atau konten
+      return criticalKeywords.some(keyword => textToSearch.includes(keyword));
+    });
+  }
+
+  /**
+   * Fetches the latest news articles from Google News RSS feed for a specific query
+   * @param {string} query
+   * @returns {Promise<Array>} - Array of parsed article objects
+   */
+  async fetchFromSearchEngine(query) {
+    try {
       const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=id-ID&gl=ID&ceid=ID:id`;
       
       console.log(`[SearchService] Menghubungi Google News RSS untuk mencari isu terkini di "${query}"...`);

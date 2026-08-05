@@ -26,14 +26,18 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^5.18.0",
+    "apify-client": "^2.24.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
     "openai": "^4.55.0",
-    "pdf-parse": "^2.4.5",
-    "pdfkit": "^0.19.1"
+    "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.19.1",
+    "puppeteer": "^25.5.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.4",

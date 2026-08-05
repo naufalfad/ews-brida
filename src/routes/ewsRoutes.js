@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { 
+  ingestNews,
   processNews, 
   runRegionalAnalysis, 
   generateRecommendations, 
@@ -14,6 +15,9 @@ import {
 } from '../controllers/baselineController.js';
 
 const router = Router();
+
+// TAHAP 1: Ingestion & Smart Scoping Engine
+router.post('/ingest-news', ingestNews);
 
 // FASE 1: Kredibilitas & Triangulasi Berita Hari Ini
 router.post('/process-news', processNews);

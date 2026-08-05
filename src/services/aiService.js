@@ -11,6 +11,96 @@ class AiService {
     });
   }
 
+ /**
+   * FASE 0: Menghasilkan kata kunci pencarian berita/sosmed real-time HARI INI untuk Mimika
+   * @param {Array} baselines - Data acuan normal dari database
+   * @returns {Promise<Array<string>>} - Array kata kunci pencarian presisi
+   */
+  async generateSearchQueries(baselines = []) {
+    const formattedBaselines = baselines.map(b => `- ${b.category}: ${b.baselineValue}`).join('\n');
+    
+    // Ambil tanggal hari ini secara dinamis (Format: YYYY-MM-DD / Bahasa Indonesia)
+    const todayDate = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const systemPrompt = `Anda adalah Spesialis Pengumpul Data Intelijen & Early Warning System (EWS) Kesbangpol Kabupaten Mimika.
+
+TUGAS UTAMA:
+Hasilkan 6 hingga 8 kata kunci pencarian (search queries) yang sangat presisi, tajam, dan terstruktur untuk melacak berita online serta postingan media sosial terbaru yang terbit HARI INI (${todayDate}) terkait potensi konflik sosial, gangguan Kamtibmas, dan keresahan warga di wilayah Kabupaten Mimika.
+
+ATURAN WAKTU & KETEPATAN (STRICT REAL-TIME):
+1. FOKUS HARI INI: Pencarian WAJIB diarahkan untuk menangkap kejadian, perkembangan, dan isu terkini HARI INI (${todayDate}). Gunakan kata kunci temporal seperti "hari ini", "terbaru", "agustus 2026", atau penanda kejadian terkini.
+2. JANGAN menghasilkan kata kunci umum tanpa konteks lokasi/waktu yang berisiko menarik artikel lama.
+
+KATEGORI ISU YANG HARUS DICAKUP:
+1. PANGAN & SEMBAKO: Kenaikan harga sembako ekstrem, lonjakan harga beras/minyak goreng, kelangkaan stok pangan di distrik terpencil (Agimuga, Jita, Mapurujaya, Mimika Barat, dll).
+2. AKSESIBILITAS & INFRASTRUKTUR: Pemalangan jalan, pemblokiran jalur utama Tembagapura/Kwamki Narama/SP3, penutupan area vital, dermaga, atau kantor pemerintahan.
+3. BBM & ENERGI: Antrean panjang kendaraan di SPBU Komodo/Nusalima, kelangkaan solar/pertalite/minyak tanah di Timika.
+4. GESEKAN SOSIAL & SARA: Ujaran kebencian, isu SARA, bentrokan antar-warga/kelompok, rumor politik lokal/Pilkada Papua Tengah, dan narasi provokatif di media sosial.
+5. DAMPAK ISU NASIONAL: Isu keamanan/kebijakan nasional di Papua Tengah yang berpotensi memicu demonstrasi atau keresahan lokal di Timika.
+
+ATURAN FORMULASI KATA KUNCI (BEST PRACTICE):
+- Sertakan nama entitas lokasi spesifik: "Mimika", "Timika", "Tembagapura", "Agimuga", "Kwamki Narama", "SP3", "Mapurujaya", atau "Papua Tengah".
+- Gunakan variasi kata kunci pencarian publik alami DAN kombinasi Search Operators/Google Dorking sederhana (misal: 'beras mahal agimuga timika hari ini' atau 'site:detik.com "Timika" "pemalangan"').
+- Panjang query ideal adalah 3 hingga 6 kata agar efektif dieksekusi oleh Google API, SerpAPI, maupun Scraper Search.`;
+
+    const userPrompt = `Tanggal Pencarian Real-time: ${todayDate}
+Acuan Baseline Normal Saat Ini:
+${formattedBaselines}
+
+Hasilkan array kata kunci pencarian terstruktur khusus untuk berita dan postingan HARI INI.`;
+
+    try {
+      const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      console.log(`[Fase 0] Generasi Query Pencarian Real-time (${todayDate}) ke OpenAI (${modelName})...`);
+
+      const completion = await this.openai.chat.completions.create({
+        model: modelName,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'search_queries_response',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                queries: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Daftar kata kunci pencarian spesifik untuk Google Custom Search / SerpAPI yang menargetkan berita hari ini'
+                }
+              },
+              required: ['queries'],
+              additionalProperties: false
+            }
+          }
+        }
+      });
+
+      const parsedResponse = JSON.parse(completion.choices[0].message.content);
+      return parsedResponse.queries;
+    } catch (error) {
+      console.error('Error in generateSearchQueries:', error);
+      
+      // Fallback kata kunci dinamis jika API gagal
+      const currentYear = new Date().getFullYear();
+      return [
+        `berita pemalangan jalan timika mimika hari ini`,
+        `harga beras mahal distrik agimuga timika ${currentYear}`,
+        `kelangkaan bbm solar antrean spbu timika hari ini`,
+        `demo bentrok warga mimika papua tengah terbaru`,
+        `site:seputarpapua.com "Timika" "keresahan"`
+      ];
+    }
+  }
+
   /**
    * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan prompt user dan baseline
    * @param {Array} articles - Daftar artikel dari hasil penelusuran internet

@@ -3,6 +3,45 @@ import prisma from '../config/prisma.js';
 import aiService from '../services/aiService.js';
 import pdfService from '../services/pdfService.js';
 import searchService from '../services/searchService.js';
+import baselineService from '../services/baselineService.js';
+
+/**
+ * Controller Tahap 1: Ingest & Filter Raw News
+ */
+export async function ingestNews(req, res) {
+  try {
+    // 1. Ambil Data Baseline acuan
+    // Get baselines via Prisma directly if baselineService.getBaselines doesn't exist, but we will try baselineService or prisma
+    let baselines = [];
+    if (baselineService && baselineService.getBaselines) {
+      baselines = await baselineService.getBaselines();
+    } else {
+      baselines = await prisma.systemBaseline.findMany();
+    }
+
+    // 2. Generasi Query Pencarian via OpenAI (Fase 0)
+    const queries = await aiService.generateSearchQueries(baselines);
+
+    // 3. Ambil Berita Mentah via Search Engine API
+    const rawArticles = await searchService.executeBatchSearch(queries);
+
+    return res.status(200).json({
+      success: true,
+      message: `Tahap 1 Berhasil: Mengumpulkan ${rawArticles.length} artikel terfilter untuk wilayah Mimika.`,
+      data: {
+        generatedQueries: queries,
+        totalArticlesFound: rawArticles.length,
+        articles: rawArticles
+      }
+    });
+  } catch (error) {
+    console.error('Error in ingestNews:', error);
+    return res.status(500).json({
+      success: false,
+      error: `Gagal menjalankan Ingestion Tahap 1: ${error.message}`
+    });
+  }
+}
 
 /**
  * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan live penelusuran internet
