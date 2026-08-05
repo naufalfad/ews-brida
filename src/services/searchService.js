@@ -3,12 +3,17 @@
  */
 class SearchService {
   /**
-   * Fetches the latest news articles from Google News RSS feed for the query "mimika"
+   * Fetches the latest news articles from Google News RSS feed for the query "mimika" and optional sector
+   * @param {string} sector - Optional sector to query (e.g. ekonomi, politik, infrastruktur)
    * @returns {Promise<Array>} - Array of parsed article objects
    */
-  async searchMimikaNews() {
+  async searchMimikaNews(sector) {
     try {
-      const query = 'mimika';
+      let query = 'mimika';
+      if (sector && sector.trim().length > 0) {
+        query = `mimika ${sector.trim()}`;
+      }
+      
       const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=id-ID&gl=ID&ceid=ID:id`;
       
       console.log(`[SearchService] Menghubungi Google News RSS untuk mencari isu terkini di "${query}"...`);
@@ -26,6 +31,7 @@ class SearchService {
       const linkRegex = /<link>([\s\S]*?)<\/link>/;
       const dateRegex = /<pubDate>([\s\S]*?)<\/pubDate>/;
       const sourceRegex = /<source[^>]*?>([\s\S]*?)<\/source>/;
+      const descriptionRegex = /<description>([\s\S]*?)<\/description>/;
 
       const articles = [];
       let match;
@@ -37,6 +43,7 @@ class SearchService {
         const linkMatch = linkRegex.exec(itemContent);
         const dateMatch = dateRegex.exec(itemContent);
         const sourceMatch = sourceRegex.exec(itemContent);
+        const descriptionMatch = descriptionRegex.exec(itemContent);
 
         if (titleMatch && linkMatch) {
           const fullTitle = this.unescapeHtml(titleMatch[1].trim());
@@ -49,14 +56,30 @@ class SearchService {
             title = fullTitle.substring(0, fullTitle.length - suffix.length).trim();
           }
 
-          articles.push({
-            title: title,
-            sourceName: sourceName,
-            sourceType: 'Media Online',
-            url: linkMatch[1].trim(),
-            content: `Pemberitaan berjudul "${title}" dirilis oleh ${sourceName}. Lakukan analisis terhadap judul dan sumber berita ini apakah mengindikasikan tensi sosial, konflik, sengketa ulayat, demonstrasi, atau kelangkaan energi/pangan di Kabupaten Mimika Papua Tengah.`,
-            publishedAt: dateMatch ? new Date(dateMatch[1]) : new Date(),
-          });
+          let description = '';
+          if (descriptionMatch) {
+            // Strip HTML tags and clean double spaces
+            description = this.unescapeHtml(
+              descriptionMatch[1]
+                .replace(/<[^>]*>?/gm, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+            );
+          }
+
+          const publishedAt = dateMatch ? new Date(dateMatch[1]) : new Date();
+          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          
+          if (publishedAt >= oneDayAgo) {
+            articles.push({
+              title: title,
+              sourceName: sourceName,
+              sourceType: 'Media Online',
+              url: linkMatch[1].trim(),
+              content: description || title,
+              publishedAt: publishedAt,
+            });
+          }
         }
       }
       

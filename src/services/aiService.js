@@ -12,50 +12,48 @@ class AiService {
   }
 
   /**
-   * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan prompt user dan baseline
+   * FASE 1: Mencari dan memilah berita berpotensi kerusuhan/keributan berdasarkan sektor
    * @param {Array} articles - Daftar artikel dari hasil penelusuran internet
+   * @param {string} sector - Sektor fokus pencarian (contoh: ekonomi, politik, infrastruktur)
    * @param {Array} baselines - Daftar baseline acuan dari database
    * @returns {Promise<Array>} - Array objek berita relevan
    */
-  async evaluateNewsCredibility(articles, baselines = []) {
+  async searchNews(articles, sector = 'umum', baselines = []) {
     if (!articles || articles.length === 0) {
-      throw new Error('Tidak ada artikel untuk dinilai kredibilitasnya.');
+      throw new Error('Tidak ada artikel untuk dicari beritanya.');
     }
 
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY tidak dikonfigurasi.');
     }
 
-    const formattedBaselines = baselines.map((b, idx) => {
-      return `Baseline Acuan ${idx + 1}:
-- Kategori: ${b.category}
-- Kondisi Normal: ${b.baselineValue}`;
-    }).join('\n\n');
-
     const formattedArticles = articles.map((a, idx) => {
-      return `Article Temp ID: ${idx}
+      return `Article ID: ${idx}
 - Title: ${a.title}
-- Source: ${a.sourceName} (${a.sourceType})
+- Source: ${a.sourceName}
 - URL: ${a.url}
-- Content: ${a.content}
+- Summary: ${a.content}
 ----------------------------------------`;
     }).join('\n');
 
-    const systemPrompt = `berikan saya berita hari ini untuk wilayah mimika yang memiliki potensi menyebabkan kerusuhan di wilayah mimika. berikan saya sumber sumber muculnya berita tersebut, cari di sosial media(FB, IG, X, TikTok, YouTube, Threads), atau media yang memiliki kredibilitas tinggi (portal.mimikakab.go.id, salampapua.com, papua60detik.id, seputarpapua.com, radartimika.co.id, tabloidjubi.com, tribunnews.com/papua.tribunnews.com, detik.com, kompas.com, tempo.co, Polri, Pemda SP 3, Humas) sertakan juga link referensi dari berita yang ditemukan.
+    const systemPrompt = `Anda adalah Asisten Analis EWS (Early Warning System) BRIDA Kabupaten Mimika.
+Tugas utama Anda adalah memilah berita di wilayah Kabupaten Mimika dalam 24 jam terakhir yang memiliki potensi menimbulkan keributan, kecemasan publik, ketidaknyamanan warga, konflik sosial, atau gangguan ketertiban umum di masyarakat Mimika.
 
-Sebagai acuan penentu potensi kerusuhan, gunakan BASELINE keadaan aman/target pemerintah Kabupaten Mimika berikut sebagai pembanding:
-${formattedBaselines}
+Pencarian saat ini sedang difokuskan khusus pada sektor: "${sector}".
 
-Aturan Pemrosesan:
-1. Jalankan pencarian ini hanya pada daftar artikel yang disediakan di bawah.
-2. Jika artikel tidak memenuhi instruksi pencarian tersebut (tidak berpotensi memicu kerusuhan di Mimika berdasarkan perbandingan dengan baseline), JANGAN masukkan artikel tersebut ke dalam array "news_reports".`;
+Aturan Pemrosesan secara Ketat:
+1. Jalankan penyaringan ini HANYA pada daftar artikel yang disediakan di bawah.
+2. Berita HANYA boleh diloloskan jika isi berita tersebut SECARA LANGSUNG berkaitan dengan sektor "${sector}" DAN memiliki potensi memicu keributan, kecemasan publik, ketidaknyamanan, atau konflik di masyarakat Mimika.
+3. JIKA BERITA TIDAK RELEVAN DENGAN SEKTOR "${sector}" ATAU tidak berpotensi menimbulkan keributan/kerusuhan, JANGAN masukkan artikel tersebut ke dalam array "news_reports".
+4. GABUNGKAN BERITA REDUNDAN: Jika beberapa media memberitakan kejadian yang sama persis, gabungkan mereka menjadi SATU entri berita saja di "news_reports". Tuliskan judul dan isi berita utama secara ringkas, kemudian kumpulkan seluruh nama media dan URL tautan aslinya ke dalam array "sources".
+5. Jika tidak ada berita yang memenuhi kriteria di atas, kembalikan array "news_reports" sebagai array kosong [].`;
 
     const userPrompt = `Daftar artikel untuk diproses:
 ${formattedArticles}`;
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Fase 1] Menyaring berita berpotensi kerusuhan ke OpenAI (${modelName})...`);
+      console.log(`[Fase 1] Menyaring berita EWS sektor "${sector}" menggunakan OpenAI (${modelName})...`);
 
       const completion = await this.openai.chat.completions.create({
         model: modelName,
@@ -66,7 +64,7 @@ ${formattedArticles}`;
         response_format: {
           type: 'json_schema',
           json_schema: {
-            name: 'news_filtering_response',
+            name: 'ews_news_reports_response',
             strict: true,
             schema: {
               type: 'object',
@@ -76,68 +74,39 @@ ${formattedArticles}`;
                   items: {
                     type: 'object',
                     properties: {
-                      article_id: {
-                        type: 'string',
-                        description: 'ID artikel asli'
-                      },
                       title: {
                         type: 'string',
-                        description: 'Judul berita'
+                        description: 'Judul berita yang informatif dan representatif.'
                       },
                       content: {
                         type: 'string',
-                        description: 'Isi atau konten berita'
+                        description: 'Ringkasan isi berita.'
                       },
-                      source: {
+                      potential_impact: {
                         type: 'string',
-                        description: 'Sumber berita'
+                        description: 'Potensi dampak buruk, kecemasan, keributan, atau kerusuhan yang akan terjadi di masyarakat Mimika jika tidak ada tindakan/mitigasi.'
                       },
-                      url: {
-                        type: 'string',
-                        description: 'URL berita'
-                      },
-                      potential_chaos_explanation: {
-                        type: 'string',
-                        description: 'Penjelasan mengapa berita ini berpotensi memicu kerusuhan'
-                      },
-                      triangulation_group: {
-                        type: 'string',
-                        description: 'Nama/Label grup isu yang sama (misal: "Antrean BBM SPBU Komodo", "Pilkada Mimika 2026")'
-                      },
-                      supporting_sources: {
+                      sources: {
                         type: 'array',
                         items: {
                           type: 'object',
                           properties: {
                             source_name: {
                               type: 'string',
-                              description: 'Nama media'
+                              description: 'Nama media atau sosial media asal berita.'
                             },
                             url: {
                               type: 'string',
-                              description: 'Link URL media'
-                            },
-                            title: {
-                              type: 'string',
-                              description: 'Judul artikel pendukung'
+                              description: 'Link URL berita tersebut.'
                             }
                           },
-                          required: ['source_name', 'url', 'title'],
+                          required: ['source_name', 'url'],
                           additionalProperties: false
                         },
-                        description: 'Daftar berita lain dalam batch yang membahas isu sejenis (jika ada)'
+                        description: 'Kumpulan seluruh sumber dan URL link dari berita ganda/redundant yang membicarakan kejadian yang sama.'
                       }
                     },
-                    required: [
-                      'article_id',
-                      'title',
-                      'content',
-                      'source',
-                      'url',
-                      'potential_chaos_explanation',
-                      'triangulation_group',
-                      'supporting_sources'
-                    ],
+                    required: ['title', 'content', 'potential_impact', 'sources'],
                     additionalProperties: false
                   }
                 }
@@ -152,7 +121,7 @@ ${formattedArticles}`;
       const parsedResponse = JSON.parse(completion.choices[0].message.content);
       return parsedResponse.news_reports;
     } catch (error) {
-      console.error('Error in evaluateNewsCredibility:', error);
+      console.error('Error in searchNews:', error);
       throw new Error(`Gagal menyaring berita: ${error.message}`);
     }
   }

@@ -5,25 +5,82 @@ import pdfService from '../services/pdfService.js';
 import searchService from '../services/searchService.js';
 
 /**
+ * Menghitung skor kredibilitas berita secara dinamis berdasarkan reputasi sumber & triangulasi berita sejenis.
+ */
+const calculateCredibility = (sourceName, sourceType, supportingSources = []) => {
+  let baseScore = 35; // Default untuk media sosial atau sumber tidak dikenal
+  
+  const sourceLower = (sourceName || '').toLowerCase();
+  const typeLower = (sourceType || '').toLowerCase();
+  
+  // Whitelist portal berita kredibel Mimika, nasional, & institusi resmi
+  const credibleKeywords = [
+    'mimikakab.go.id', 'salampapua.com', 'papua60detik.id', 'seputarpapua.com', 
+    'radartimika.co.id', 'tabloidjubi.com', 'tribunnews.com', 'detik.com', 
+    'kompas.com', 'tempo.co', 'polri.go.id', 'polri', 'pemda', 'humas', 
+    'antaranews.com', 'antara'
+  ];
+  
+  const isCredibleMedia = credibleKeywords.some(keyword => sourceLower.includes(keyword)) || 
+                           typeLower.includes('media online') || 
+                           typeLower.includes('portal berita');
+
+  if (isCredibleMedia) {
+    baseScore = 70;
+  } else if (
+    typeLower.includes('sosmed') || 
+    typeLower.includes('sosial media') || 
+    typeLower.includes('facebook') || 
+    typeLower.includes('instagram') || 
+    typeLower.includes('tiktok') || 
+    typeLower.includes('youtube') || 
+    typeLower.includes('threads') || 
+    typeLower.includes('twitter') ||
+    typeLower.includes('x')
+  ) {
+    baseScore = 35;
+  }
+
+  // Bonus Triangulasi: Jika ada artikel pendukung (corroborating sources)
+  let triangulationBonus = 0;
+  if (supportingSources && Array.isArray(supportingSources)) {
+    supportingSources.forEach(src => {
+      const srcNameLower = (src.source_name || src.source || '').toLowerCase();
+      const isSrcCredible = credibleKeywords.some(keyword => srcNameLower.includes(keyword));
+      
+      if (isSrcCredible) {
+        triangulationBonus += 15; // Berita kredibel menyokong
+      } else {
+        triangulationBonus += 5;  // Sosmed/sumber biasa menyokong
+      }
+    });
+  }
+
+  return Math.min(100, baseScore + triangulationBonus);
+};
+
+/**
  * FASE 1: Menyaring berita berpotensi kerusuhan menggunakan live penelusuran internet
  * POST /api/v1/ews/process-news
  */
 export const processNews = async (req, res) => {
   try {
-    console.log(`[Fase 1] Memulai pencarian berita terkini Mimika langsung dari internet...`);
+    const { sector = 'umum', baselines: customBaselines, baselineIds } = req.body;
 
-    // 1. Ambil berita real-time dari internet menggunakan searchService (Google News RSS)
-    const liveArticles = await searchService.searchMimikaNews();
+    console.log(`[Fase 1] Memulai pencarian berita terkini Mimika untuk sektor "${sector}" langsung dari internet...`);
+
+    // 1. Ambil berita real-time dari internet berdasarkan sektor menggunakan searchService
+    const liveArticles = await searchService.searchMimikaNews(sector);
 
     if (liveArticles.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Gagal mengambil berita terkini dari internet. Silakan coba beberapa saat lagi.',
+      return res.status(200).json({
+        success: true,
+        message: `Tidak ada berita terbaru untuk sektor "${sector}" di internet dalam 24 jam terakhir. Silakan coba sektor lain.`,
+        data: []
       });
     }
 
-    // 2. Ambil acuan baseline (bisa dari request body kustom, pilihan database, atau seluruhnya di DB)
-    const { baselines: customBaselines, baselineIds } = req.body;
+    // 2. Ambil acuan baseline (bisa dari request body kustom, pilihan database, atau filter berdasarkan sektor)
     let baselines = [];
 
     if (baselineIds && Array.isArray(baselineIds) && baselineIds.length > 0) {
@@ -42,49 +99,76 @@ export const processNews = async (req, res) => {
     }
 
     if (baselines.length === 0) {
-      baselines = await prisma.systemBaseline.findMany();
+      // Coba cari baseline di database yang mencakup nama sektor (case insensitive)
+      if (sector && sector !== 'umum') {
+        baselines = await prisma.systemBaseline.findMany({
+          where: {
+            category: {
+              contains: sector,
+              mode: 'insensitive'
+            }
+          }
+        });
+      }
+      
+      // Fallback ke seluruh baseline jika tidak ada baseline spesifik sektor yang ditemukan
+      if (baselines.length === 0) {
+        baselines = await prisma.systemBaseline.findMany();
+      }
     }
 
-    // 3. Panggil AI Service untuk menyaring dan mencocokkan berita dengan baseline
-    const newsReports = await aiService.evaluateNewsCredibility(liveArticles, baselines);
+    // 3. Panggil AI Service untuk menyaring dan mencocokkan berita dengan baseline berdasarkan sektor
+    const newsReports = await aiService.searchNews(liveArticles, sector, baselines);
 
-    console.log(`[Fase 1] AI menyaring ${newsReports.length} berita berpotensi kerusuhan dari ${liveArticles.length} total berita hasil pencarian.`);
+    console.log(`[Fase 1] AI menyaring ${newsReports.length} berita berpotensi gangguan EWS untuk sektor "${sector}" dari ${liveArticles.length} berita.`);
 
     // 4. Simpan berita yang relevan saja ke database raw_articles
     const processedArticles = [];
-    for (const report of newsReports) {
-      // Ambil index artikel asli menggunakan temp ID dari AI
-      const idx = parseInt(report.article_id, 10);
-      if (isNaN(idx) || idx < 0 || idx >= liveArticles.length) {
-        console.warn(`[Fase 1] Mengabaikan report dengan index tidak valid: ${report.article_id}`);
-        continue;
-      }
+    
+    if (newsReports.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: `Tidak ada berita berpotensi kerusuhan pada sektor "${sector}" dalam 24 jam terakhir.`,
+        data: []
+      });
+    }
 
-      const originalArticle = liveArticles[idx];
+    for (const report of newsReports) {
+      // Ambil sumber utama dari array sources yang dikembalikan AI
+      const primarySource = report.sources && report.sources[0] 
+        ? report.sources[0] 
+        : { source_name: 'Media Online', url: '' };
+
+      // Hitung skor kredibilitas secara dinamis berdasarkan whitelist & jumlah sumber pendukung
+      const calculatedScore = calculateCredibility(
+        primarySource.source_name,
+        'Media Online',
+        report.sources ? report.sources.slice(1).map(s => ({ source_name: s.source_name, url: s.url })) : []
+      );
+
+      console.log(`[Fase 1] Menyimpan EWS berita: "${report.title}" (Kredibilitas: ${calculatedScore}, Sumber: ${report.sources?.length || 1})`);
 
       // Periksa duplikasi judul berita di database untuk menghindari duplikasi record
       let dbArticle = await prisma.rawArticle.findFirst({
-        where: { title: originalArticle.title }
+        where: { title: report.title }
       });
 
       if (!dbArticle) {
         // Masukkan artikel baru yang lolos penyaringan EWS
         dbArticle = await prisma.rawArticle.create({
           data: {
-            title: originalArticle.title,
-            sourceName: originalArticle.sourceName,
-            sourceType: originalArticle.sourceType,
-            url: originalArticle.url,
-            content: originalArticle.content,
-            publishedAt: originalArticle.publishedAt,
-            credibilityScore: 100.0,
-            triangulationGroup: report.triangulation_group,
+            title: report.title,
+            sourceName: primarySource.source_name,
+            sourceType: 'Media Online',
+            url: primarySource.url,
+            content: report.content,
+            publishedAt: new Date(), // Google RSS results are within last 24h
+            credibilityScore: parseFloat(calculatedScore),
+            triangulationGroup: null, // Dinonaktifkan sementara di Fase 1 sesuai request
             credibilityFactors: {
               content: report.content,
-              source: report.source,
-              url: report.url,
-              potentialChaosExplanation: report.potential_chaos_explanation,
-              supportingSources: report.supporting_sources,
+              potentialImpact: report.potential_impact,
+              sources: report.sources,
               isRelevantToEws: true
             }
           }
@@ -94,14 +178,13 @@ export const processNews = async (req, res) => {
         dbArticle = await prisma.rawArticle.update({
           where: { id: dbArticle.id },
           data: {
-            credibilityScore: 100.0,
-            triangulationGroup: report.triangulation_group,
+            content: report.content,
+            credibilityScore: parseFloat(calculatedScore),
+            triangulationGroup: null, // Dinonaktifkan sementara
             credibilityFactors: {
               content: report.content,
-              source: report.source,
-              url: report.url,
-              potentialChaosExplanation: report.potential_chaos_explanation,
-              supportingSources: report.supporting_sources,
+              potentialImpact: report.potential_impact,
+              sources: report.sources,
               isRelevantToEws: true
             }
           }
@@ -113,7 +196,7 @@ export const processNews = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Penyaringan berita selesai. Ditemukan ${processedArticles.length} berita berpotensi kerusuhan.`,
+      message: `Penyaringan berita selesai. Ditemukan ${processedArticles.length} berita berpotensi kerusuhan pada sektor "${sector}".`,
       data: processedArticles
     });
   } catch (error) {
@@ -133,33 +216,40 @@ export const processNews = async (req, res) => {
 export const runRegionalAnalysis = async (req, res) => {
   try {
     const { triangulationGroup } = req.body;
+    let credibleArticles = [];
 
-    if (!triangulationGroup) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parameter triangulationGroup wajib disertakan.',
+    if (triangulationGroup) {
+      console.log(`[Fase 2] Mengambil berita terverifikasi untuk kelompok isu: "${triangulationGroup}"...`);
+      credibleArticles = await prisma.rawArticle.findMany({
+        where: {
+          triangulationGroup: triangulationGroup,
+          credibilityScore: {
+            gte: 50.0
+          }
+        },
+        orderBy: {
+          createdAt: 'desc',
+        }
+      });
+    } else {
+      console.log(`[Fase 2] Mengambil 10 berita terverifikasi terbaru secara umum...`);
+      credibleArticles = await prisma.rawArticle.findMany({
+        where: {
+          credibilityScore: {
+            gte: 50.0
+          }
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 10
       });
     }
-
-    console.log(`[Fase 2] Mengambil berita terverifikasi untuk kelompok isu: "${triangulationGroup}"...`);
-
-    // Ambil berita yang berada dalam triangulationGroup tersebut
-    const credibleArticles = await prisma.rawArticle.findMany({
-      where: {
-        triangulationGroup: triangulationGroup,
-        credibilityScore: {
-          gte: 50.0 // Hanya berita valid/lolos EWS
-        }
-      },
-      orderBy: {
-        createdAt: 'desc',
-      }
-    });
 
     if (credibleArticles.length === 0) {
       return res.status(404).json({
         success: false,
-        message: `Tidak menemukan berita terverifikasi untuk kelompok isu: "${triangulationGroup}". Pastikan isu sudah ditarik di Fase 1.`,
+        message: 'Tidak menemukan berita terverifikasi. Silakan jalankan Fase 1 terlebih dahulu.',
       });
     }
 
@@ -191,7 +281,7 @@ export const runRegionalAnalysis = async (req, res) => {
 
     const batchId = crypto.randomUUID();
 
-    // Simpan analisis awal ke database (belum memuat rekomendasi aksi & OPD)
+    // Simpan awal analisis ke database (belum memuat rekomendasi aksi & OPD)
     const newAnalysis = await prisma.ewsAnalysis.create({
       data: {
         batchId: batchId,
@@ -222,13 +312,13 @@ export const runRegionalAnalysis = async (req, res) => {
         userId: req.headers['x-user-id'] || 'SYSTEM_BRIDA',
         actionType: 'GENERATE_ANALYSIS',
         analysisId: newAnalysis.id,
-        notes: `Membuat analisis dampak wilayah untuk kelompok isu "${triangulationGroup}". Risiko: ${analysis.risk_level}.`,
+        notes: `Membuat analisis dampak wilayah. Risiko: ${analysis.risk_level}.`,
       }
     });
 
     return res.status(200).json({
       success: true,
-      message: `Analisis dampak wilayah untuk kelompok isu "${triangulationGroup}" selesai dibuat.`,
+      message: 'Analisis dampak wilayah terhadap RKPD selesai dibuat.',
       data: newAnalysis
     });
   } catch (error) {
