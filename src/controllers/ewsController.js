@@ -2,6 +2,7 @@ import prisma from '../config/prisma.js';
 import aiService from '../services/aiService.js';
 import searchService from '../services/searchService.js';
 import apifyService from '../services/apifyService.js';
+import pdfService from '../services/pdfService.js';
 import baselineService from '../services/baselineService.js';
 
 // Helper to fetch and extract clean text from a URL
@@ -61,13 +62,6 @@ export const searchIssues = async (req, res) => {
     const hasQuery = query && query.trim().length > 0;
     const hasFiles = req.files && req.files.length > 0;
     const hasLinks = links.length > 0;
-
-    if (!hasQuery && !hasFiles && !hasLinks) {
-      return res.status(400).json({
-        success: false,
-        message: 'Harap sertakan parameter "query", upload "files" (gambar/txt/pdf), atau sertakan tautan "links" referensi berita.'
-      });
-    }
 
     console.log(`[EwsController] Memulai pencarian EWS. Query: ${hasQuery ? 'Ya' : 'Tidak'}, Files Count: ${req.files ? req.files.length : 0}, Links Count: ${links.length}`);
 
@@ -544,3 +538,185 @@ export const mitigateIssue = async (req, res) => {
     });
   }
 };
+
+/**
+ * TAHAP 5: AI Draft Report
+ * POST /api/v1/ews/issues/:id/report/draft
+ */
+export const generateReportDraft = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Cek keberadaan isu
+    const issue = await prisma.ewsIssue.findUnique({
+      where: { id }
+    });
+
+    if (!issue) {
+      return res.status(404).json({
+        success: false,
+        message: `Isu dengan ID ${id} tidak ditemukan.`
+      });
+    }
+
+    // 2. Draft laporan hanya bisa disusun jika analisis sudah dirumuskan (ANALYZED/MITIGATED)
+    if (issue.status !== 'ANALYZED' && issue.status !== 'MITIGATED') {
+      return res.status(400).json({
+        success: false,
+        message: `Harap jalankan analisis dampak dan rencana mitigasi terlebih dahulu sebelum menyusun draf laporan. Status saat ini: ${issue.status}`
+      });
+    }
+
+    // 3. Panggil AI Service untuk generate draf laporan resmi
+    const draft = await aiService.generateReportDraft(issue);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Berhasil membuat draf laporan EWS menggunakan AI.',
+      data: draft
+    });
+
+  } catch (error) {
+    console.error('Error in generateReportDraft controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal menyusun draf laporan EWS.',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * TAHAP 5: Simpan Laporan Kustom hasil edit user
+ * POST /api/v1/ews/issues/:id/report
+ */
+export const saveReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, author } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter "title" dan "content" wajib diisi untuk menyimpan laporan.'
+      });
+    }
+
+    // 1. Cek keberadaan isu
+    const issue = await prisma.ewsIssue.findUnique({
+      where: { id }
+    });
+
+    if (!issue) {
+      return res.status(404).json({
+        success: false,
+        message: `Isu dengan ID ${id} tidak ditemukan.`
+      });
+    }
+
+    // 2. Simpan ke database (tabel ews_reports)
+    const report = await prisma.ewsReport.create({
+      data: {
+        issueId: id,
+        title,
+        content,
+        author: author || 'KEPALA_BRIDA'
+      }
+    });
+
+    // 3. Buat entri Audit Log
+    await prisma.auditLog.create({
+      data: {
+        userId: author || 'KEPALA_BRIDA',
+        actionType: 'SAVE_REPORT',
+        issueId: id,
+        notes: `Menyimpan laporan kustom EWS dengan judul "${title}".`
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Laporan resmi EWS berhasil disimpan di database.',
+      data: report
+    });
+
+  } catch (error) {
+    console.error('Error in saveReport controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal menyimpan laporan EWS.',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * TAHAP 5: Melihat riwayat laporan
+ * GET /api/v1/ews/reports
+ */
+export const getReports = async (req, res) => {
+  try {
+    const reports = await prisma.ewsReport.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        Issue: true
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: reports
+    });
+  } catch (error) {
+    console.error('Error in getReports controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengambil riwayat laporan EWS.',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * TAHAP 5: Cetak Laporan PDF Kustom
+ * GET /api/v1/ews/reports/:reportId/pdf
+ */
+export const printReportPdf = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+
+    // 1. Ambil data laporan
+    const report = await prisma.ewsReport.findUnique({
+      where: { id: reportId },
+      include: {
+        Issue: true
+      }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: `Laporan dengan ID ${reportId} tidak ditemukan.`
+      });
+    }
+
+    // 2. Set response headers untuk stream PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Laporan_EWS_${reportId}.pdf`);
+
+    // 3. Panggil PDF Service untuk menggambar naskah laporan kustom
+    pdfService.generateCustomReportPdf(report, res);
+
+  } catch (error) {
+    console.error('Error in printReportPdf controller:', error);
+    // Jangan kirim respons status jika header sudah terkirim oleh stream pdf
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Gagal menghasilkan PDF laporan.',
+        error: error.message
+      });
+    }
+  }
+};
+

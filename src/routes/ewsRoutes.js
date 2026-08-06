@@ -4,7 +4,11 @@ import {
   getIssues,
   verifyIssue,
   analyzeIssue,
-  mitigateIssue
+  mitigateIssue,
+  generateReportDraft,
+  saveReport,
+  getReports,
+  printReportPdf
 } from '../controllers/ewsController.js';
 import {
   upload,
@@ -45,6 +49,22 @@ router.post('/issues/:id/analyze', analyzeIssue);
 
 // Rancang mitigasi dan rekomendasi OPD isu EWS terpilih (berstatus ANALYZED)
 router.post('/issues/:id/mitigate', mitigateIssue);
+
+// ==========================================
+// TAHAP 5: LAPORAN RESMI & EKSPOR PDF
+// ==========================================
+
+// Buat draf laporan dinas menggunakan AI
+router.post('/issues/:id/report/draft', generateReportDraft);
+
+// Simpan laporan resmi kustom yang sudah diedit user
+router.post('/issues/:id/report', saveReport);
+
+// List riwayat laporan yang tersimpan di database
+router.get('/reports', getReports);
+
+// Cetak PDF laporan kustom dari database
+router.get('/reports/:reportId/pdf', printReportPdf);
 
 // ==========================================
 // PENGELOLAAN BASELINE ACUAN

@@ -581,6 +581,94 @@ ${issue.predictedImpact}
       throw new Error(`Gagal merancang rencana mitigasi: ${error.message}`);
     }
   }
+
+  /**
+   * TAHAP 5: Draft Report Generation
+   * Menyusun draf laporan birokrasi formal berdasarkan data analisis dan mitigasi
+   * @param {Object} issue - Objek EwsIssue lengkap dari database
+   * @returns {Promise<Object>} - Berisi { title, content }
+   */
+  async generateReportDraft(issue) {
+    const formattedSources = Array.isArray(issue.sources)
+      ? issue.sources.map(s => `- ${s.source_name || s.sourceName}: ${s.url}`).join('\n')
+      : `- ${issue.sourceName}: ${issue.sourceUrl}`;
+
+    const formattedMitigations = Array.isArray(issue.mitigationActions)
+      ? issue.mitigationActions.map((a, i) => `${i + 1}. ${a}`).join('\n')
+      : '- Belum ditentukan';
+
+    const systemPrompt = `Anda adalah Asisten Analis EWS (Early Warning System) BRIDA Kabupaten Mimika.
+Tugas Anda adalah menulis Draf Laporan Kewaspadaan Dini Daerah yang formal, terstruktur, dan menggunakan bahasa birokrasi Indonesia yang baik, benar, serta sopan.
+
+Struktur Laporan yang WAJIB dipatuhi:
+1. JUDUL LAPORAN: Tulis judul laporan yang formal dan ringkas dengan huruf kapital.
+2. ISI LAPORAN (Content): Gunakan format surat dinas/nota laporan resmi dengan bahasa birokrasi yang memuat:
+   - Nomor Laporan (draf format kosong seperti: B-050/.../BRIDA/2026)
+   - Hal: Laporan Kewaspadaan Dini Terhadap [Topik Isu]
+   - I. Latar Belakang & Kronologi Isu (Menjelaskan isu yang terjadi secara detail berdasarkan data berita/sumber media).
+   - II. Hasil Analisis Dampak & Kerawanan (Menjelaskan kerawanan daerah di Distrik bersangkutan serta dampak potensi riil bagi masyarakat jika tidak segera ditangani).
+   - III. Rencana Mitigasi & Langkah Strategis Dinas (Menjabarkan aksi pencegahan nyata yang ditargetkan kepada OPD Penanggung Jawab).
+   - IV. Penutup & Rekomendasi Tindak Lanjut.
+
+Patuhi aturan format JSON keluaran secara ketat.`;
+
+    const userPrompt = `Data Isu EWS untuk laporan:
+- Judul Isu: ${issue.title}
+- Deskripsi Isu: ${issue.description}
+- Sumber Media:
+${formattedSources}
+- Tingkat Risiko: ${issue.riskLevel || 'WASPADA'}
+- Kategori Utama: ${issue.primaryCategory || 'Ketertiban Umum'}
+- Wilayah Terdampak: Distrik ${issue.targetDistrict || 'Mimika Baru'}
+- Ringkasan Analisis Dampak: ${issue.analysisSummary || 'Belum ada ringkasan'}
+- Proyeksi Dampak: ${issue.predictedImpact || 'Belum ada proyeksi'}
+- OPD Penanggung Jawab: ${issue.responsibleOpd || 'Belum ditunjuk'}
+- Rencana Aksi Mitigasi:
+${formattedMitigations}`;
+
+    try {
+      const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      console.log(`[Tahap 5 - Report Ingestion] Menyusun draf laporan resmi untuk Isu ID: ${issue.id} menggunakan OpenAI (${modelName})...`);
+
+      const completion = await this.openai.chat.completions.create({
+        model: modelName,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'report_draft_response',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                title: {
+                  type: 'string',
+                  description: 'Judul laporan dinas yang formal.'
+                },
+                content: {
+                  type: 'string',
+                  description: 'Seluruh isi naskah laporan lengkap dengan penomoran bab dalam format teks/markdown.'
+                }
+              },
+              required: ['title', 'content'],
+              additionalProperties: false
+            }
+          }
+        }
+      });
+
+      const parsedResponse = JSON.parse(completion.choices[0].message.content);
+      console.log(`[Tahap 5 - Report Ingestion] Draf laporan selesai disusun oleh AI.`);
+      return parsedResponse;
+
+    } catch (error) {
+      console.error('[AiService] Gagal menyusun draf laporan:', error);
+      throw new Error(`Gagal menyusun draf laporan: ${error.message}`);
+    }
+  }
 }
 
 export default new AiService();

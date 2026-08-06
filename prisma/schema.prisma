@@ -36,6 +36,7 @@ model EwsIssue {
   updatedAt          DateTime   @updatedAt @map("updated_at")
   
   AuditLogs          AuditLog[]
+  Reports            EwsReport[]
 
   @@index([createdAt])
   @@index([status])
@@ -65,4 +66,19 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model EwsReport {
+  id          String    @id @default(uuid()) @db.Uuid
+  issueId     String    @map("issue_id") @db.Uuid
+  title       String    @db.VarChar(255)
+  content     String    @db.Text
+  author      String    @db.VarChar(255)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  Issue       EwsIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("ews_reports")
 }
