@@ -8,6 +8,7 @@ import {
   generateReportDraft,
   saveReport,
   getReports,
+  getReportByIssue,
   printReportPdf
 } from '../controllers/ewsController.js';
 import {
@@ -56,6 +57,9 @@ router.post('/issues/:id/mitigate', mitigateIssue);
 
 // Buat draf laporan dinas menggunakan AI
 router.post('/issues/:id/report/draft', generateReportDraft);
+
+// Mengambil laporan resmi yang sudah disimpan untuk isu ini
+router.get('/issues/:id/report', getReportByIssue);
 
 // Simpan laporan resmi kustom yang sudah diedit user
 router.post('/issues/:id/report', saveReport);

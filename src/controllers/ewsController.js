@@ -308,7 +308,35 @@ export const searchIssues = async (req, res) => {
  */
 export const getIssues = async (req, res) => {
   try {
+    const { timeframe, startDate, endDate } = req.query;
+    
+    let dateFilter = {};
+    const now = new Date();
+    
+    if (timeframe === 'today') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      dateFilter = { gte: today };
+    } else if (timeframe === 'past_7_days') {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      dateFilter = { gte: sevenDaysAgo };
+    } else if (timeframe === 'past_30_days') {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+      dateFilter = { gte: thirtyDaysAgo };
+    } else if (timeframe === 'custom' && startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      dateFilter = { gte: start, lte: end };
+    }
+
+    const whereClause = Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {};
+
     const issues = await prisma.ewsIssue.findMany({
+      where: whereClause,
       orderBy: {
         createdAt: 'desc'
       },
@@ -614,17 +642,42 @@ export const saveReport = async (req, res) => {
       });
     }
 
-    // 2. Simpan ke database (tabel ews_reports)
-    const report = await prisma.ewsReport.create({
-      data: {
-        issueId: id,
-        title,
-        content,
-        author: author || 'KEPALA_BRIDA'
-      }
+    // 2. Simpan atau Update ke database (tabel ews_reports)
+    const existingReport = await prisma.ewsReport.findFirst({
+      where: { issueId: id },
+      orderBy: { createdAt: 'desc' }
     });
 
-    // 3. Buat entri Audit Log
+    let report;
+    if (existingReport) {
+      report = await prisma.ewsReport.update({
+        where: { id: existingReport.id },
+        data: {
+          title,
+          content,
+          author: author || 'KEPALA_BRIDA'
+        }
+      });
+    } else {
+      report = await prisma.ewsReport.create({
+        data: {
+          issueId: id,
+          title,
+          content,
+          author: author || 'KEPALA_BRIDA'
+        }
+      });
+    }
+
+    // 3. Update status issue menjadi REPORTED
+    if (issue.status !== 'REPORTED') {
+      await prisma.ewsIssue.update({
+        where: { id },
+        data: { status: 'REPORTED' }
+      });
+    }
+
+    // 4. Buat entri Audit Log
     await prisma.auditLog.create({
       data: {
         userId: author || 'KEPALA_BRIDA',
@@ -645,6 +698,40 @@ export const saveReport = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Gagal menyimpan laporan EWS.',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * TAHAP 5: Mengambil laporan yang sudah disimpan untuk isu tertentu
+ * GET /api/v1/ews/issues/:id/report
+ */
+export const getReportByIssue = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const report = await prisma.ewsReport.findFirst({
+      where: { issueId: id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: `Laporan untuk Isu dengan ID ${id} tidak ditemukan.`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Laporan berhasil ditemukan.',
+      data: report
+    });
+  } catch (error) {
+    console.error('Error in getReportByIssue controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengambil laporan EWS.',
       error: error.message
     });
   }
