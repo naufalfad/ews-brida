@@ -37,6 +37,9 @@ model EwsIssue {
   
   AuditLogs          AuditLog[]
 
+  @@index([createdAt])
+  @@index([status])
+  @@index([riskLevel])
   @@map("ews_issues")
 }
 
@@ -59,5 +62,7 @@ model AuditLog {
   notes      String    @db.Text
   createdAt  DateTime  @default(now()) @map("created_at")
 
+  @@index([userId])
+  @@index([createdAt])
   @@map("audit_logs")
 }

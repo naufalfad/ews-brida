@@ -20,7 +20,7 @@ const router = Router();
 // ==========================================
 
 // Cari isu terbaru di Mimika yang berpotensi kerusuhan/kecemasan berdasarkan baseline
-router.post('/search-issues', searchIssues);
+router.post('/search-issues', upload.array('files', 5), searchIssues);
 
 // Ambil riwayat isu EWS yang ditemukan
 router.get('/issues', getIssues);

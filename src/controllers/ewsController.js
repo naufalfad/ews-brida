@@ -1,6 +1,32 @@
 import prisma from '../config/prisma.js';
 import aiService from '../services/aiService.js';
 import searchService from '../services/searchService.js';
+import apifyService from '../services/apifyService.js';
+import baselineService from '../services/baselineService.js';
+
+// Helper to fetch and extract clean text from a URL
+const fetchTextFromUrl = async (url) => {
+  try {
+    console.log(`[EwsController] Scraping link referensi: ${url}`);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    if (!response.ok) return '';
+    const html = await response.text();
+    const cleanText = html
+      .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '')
+      .replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleanText.substring(0, 4000); // Limit to first 4000 chars to save tokens
+  } catch (err) {
+    console.error(`[EwsController] Gagal scrape link ${url}:`, err.message);
+    return '';
+  }
+};
 
 /**
  * TAHAP 1: Mencari dan menyaring isu berdasarkan baseline daerah
@@ -9,33 +35,157 @@ import searchService from '../services/searchService.js';
 export const searchIssues = async (req, res) => {
   try {
     const { query } = req.body;
+    let linksInput = req.body.links;
 
-    if (!query || query.trim().length === 0) {
+    // Normalisasi input links jika dikirim dalam berbagai format
+    let links = [];
+    if (linksInput) {
+      if (Array.isArray(linksInput)) {
+        links = linksInput;
+      } else if (typeof linksInput === 'string') {
+        try {
+          // Coba parse jika dikirim sebagai string array JSON (mis. '["http://link1.com"]')
+          const parsed = JSON.parse(linksInput);
+          if (Array.isArray(parsed)) {
+            links = parsed;
+          } else {
+            links = [linksInput];
+          }
+        } catch {
+          // Jika gagal parse JSON, pisahkan berdasarkan koma
+          links = linksInput.split(',').map(l => l.trim()).filter(Boolean);
+        }
+      }
+    }
+
+    const hasQuery = query && query.trim().length > 0;
+    const hasFiles = req.files && req.files.length > 0;
+    const hasLinks = links.length > 0;
+
+    if (!hasQuery && !hasFiles && !hasLinks) {
       return res.status(400).json({
         success: false,
-        message: 'Parameter "query" wajib disertakan. Berikan topik isu yang ingin dicari.'
+        message: 'Harap sertakan parameter "query", upload "files" (gambar/txt/pdf), atau sertakan tautan "links" referensi berita.'
       });
     }
 
-    console.log(`[EwsController] Memulai pencarian EWS untuk kueri user: "${query}"`);
+    console.log(`[EwsController] Memulai pencarian EWS. Query: ${hasQuery ? 'Ya' : 'Tidak'}, Files Count: ${req.files ? req.files.length : 0}, Links Count: ${links.length}`);
 
-    // 1. Ekspansi kueri pencarian menggunakan AI agar lebih relevan dengan Google News Mimika
-    const expandedQuery = await aiService.expandSearchQuery(query);
+    // 1. Ekstrak teks dari file yang diupload secara paralel
+    let combinedFileText = '';
+    if (hasFiles) {
+      const fileTexts = await Promise.all(
+        req.files.map(file => baselineService.extractTextFromFile(file))
+      );
+      combinedFileText = fileTexts.join('\n\n');
+    }
 
-    // 2. Cari berita terkait dari internet (Google News RSS)
-    const liveArticles = await searchService.searchMimikaNews(expandedQuery);
+    // 2. Ekstrak teks dari link referensi secara paralel
+    let combinedLinkText = '';
+    if (hasLinks) {
+      const linkTexts = await Promise.all(
+        links.map(link => fetchTextFromUrl(link))
+      );
+      combinedLinkText = linkTexts.join('\n\n');
+    }
+
+    // 3. Bangun kueri pencarian secara bersih dan langsung
+    let searchQuery = 'mimika';
+    if (query && query.trim().length > 0) {
+      searchQuery = `mimika (${query.trim()})`;
+    } else if (combinedFileText || combinedLinkText) {
+      // Jika kueri kosong tetapi ada dokumen pendukung, minta AI merumuskan kueri pencarian optimal
+      searchQuery = await aiService.expandSearchQuery(
+        '',
+        combinedFileText,
+        combinedLinkText
+      );
+    }
+
+    // 4. Cari berita terkait dari internet (Google News RSS & Apify Social Media) secara paralel
+    const cleanSocialQuery = query && query.trim().length > 0 ? query.trim() : searchQuery;
+    const [liveNews, socialPosts] = await Promise.all([
+      searchService.searchMimikaNews(searchQuery),
+      apifyService.searchSocialMedia(cleanSocialQuery)
+    ]);
+
+    const liveArticles = [...liveNews, ...socialPosts];
 
     if (liveArticles.length === 0) {
       return res.status(200).json({
         success: true,
-        message: `Tidak ditemukan berita terkini untuk kueri "${expandedQuery}" di internet.`,
-        timeframe: 'none',
+        message: `Tidak ditemukan berita terkini untuk kueri "${searchQuery}" di internet maupun sosial media dalam 24 jam terakhir.`,
+        timeframe: '24 jam terakhir',
         data: []
       });
     }
 
-    // 3. Tarik seluruh system baseline dari database
-    const baselines = await prisma.systemBaseline.findMany();
+    // 5. Pra-penyaringan: Eliminasi berita yang URL-nya sudah pernah diproses/terdaftar di database
+    const existingIssues = await prisma.ewsIssue.findMany({
+      select: {
+        sourceUrl: true,
+        sources: true
+      }
+    });
+
+    const existingUrls = new Set();
+    existingIssues.forEach(issue => {
+      if (issue.sourceUrl) {
+        existingUrls.add(issue.sourceUrl.trim().toLowerCase());
+      }
+      if (issue.sources && Array.isArray(issue.sources)) {
+        issue.sources.forEach(src => {
+          if (src.url) {
+            existingUrls.add(src.url.trim().toLowerCase());
+          }
+        });
+      }
+    });
+
+    const newArticles = liveArticles.filter(art => !existingUrls.has(art.url.trim().toLowerCase()));
+
+    if (newArticles.length === 0) {
+      console.log(`[EwsController] 0 berita baru terdeteksi. Semua ${liveArticles.length} berita dari internet sudah pernah di-ingest sebelumnya.`);
+      
+      // Ambil isu lama yang relevan dari database agar pengguna tetap dapat melihat datanya
+      let matchingDbIssues = [];
+      if (query && query.trim().length > 0) {
+        matchingDbIssues = await prisma.ewsIssue.findMany({
+          where: {
+            OR: [
+              { title: { contains: query.trim(), mode: 'insensitive' } },
+              { description: { contains: query.trim(), mode: 'insensitive' } }
+            ]
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+      } else {
+        matchingDbIssues = await prisma.ewsIssue.findMany({
+          where: {
+            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Seluruh berita yang ditemukan sudah pernah diproses sebelumnya. Menampilkan data relevan dari database.',
+        timeframe: '7 hari terakhir',
+        data: matchingDbIssues
+      });
+    }
+
+    console.log(`[EwsController] Menemukan ${newArticles.length} berita baru dari total ${liveArticles.length} berita untuk dianalisis AI.`);
+
+    // 6. Ambil acuan baseline dan isu-isu aktif (7 hari terakhir) sebagai konteks deduplikasi semantik
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [baselines, activeDbIssues] = await Promise.all([
+      prisma.systemBaseline.findMany(),
+      prisma.ewsIssue.findMany({
+        where: { createdAt: { gte: sevenDaysAgo } }
+      })
+    ]);
 
     if (baselines.length === 0) {
       return res.status(500).json({
@@ -44,19 +194,25 @@ export const searchIssues = async (req, res) => {
       });
     }
 
-    // 4. Hubungi AI untuk menyaring seluruh berita 7 hari terakhir terhadap baseline
-    const filteredIssues = await aiService.filterIssuesAgainstBaselines(liveArticles, baselines);
+    // 7. Hubungi AI untuk menyaring berita-berita baru terhadap baseline dengan membandingkan isu di DB
+    const filteredIssues = await aiService.filterIssuesAgainstBaselines(
+      newArticles,
+      baselines,
+      query || '',
+      activeDbIssues
+    );
 
     const savedIssues = [];
 
-    // 5. Simpan hasil saringan isu ke database dengan status 'DRAFT_SEARCHED'
+    // 8. Simpan/Gabungkan hasil saringan isu ke database secara akumulatif
     for (const issue of filteredIssues) {
-      // Cek duplikasi judul agar tidak menyimpan isu yang sama berulang kali
+      // Cari apakah isu dengan judul yang sama persis sudah ada di database
       let dbIssue = await prisma.ewsIssue.findFirst({
         where: { title: issue.title }
       });
 
       if (!dbIssue) {
+        // Jika belum ada, buat entri isu baru
         dbIssue = await prisma.ewsIssue.create({
           data: {
             title: issue.title,
@@ -68,12 +224,25 @@ export const searchIssues = async (req, res) => {
           }
         });
       } else {
-        // Jika sudah ada, perbarui deskripsi dan daftar sumber pendukung terbaru
+        // Jika sudah ada, gabungkan daftar media (sources) secara unik (deduplikasi URL case-insensitive)
+        const existingSources = Array.isArray(dbIssue.sources) ? dbIssue.sources : [];
+        const newSources = Array.isArray(issue.sources) ? issue.sources : [];
+        const mergedSources = [...existingSources];
+
+        newSources.forEach(newSrc => {
+          const exists = mergedSources.some(oldSrc => 
+            (oldSrc.url || '').trim().toLowerCase() === (newSrc.url || '').trim().toLowerCase()
+          );
+          if (!exists) {
+            mergedSources.push(newSrc);
+          }
+        });
+
         dbIssue = await prisma.ewsIssue.update({
           where: { id: dbIssue.id },
           data: {
             description: issue.description,
-            sources: issue.sources,
+            sources: mergedSources,
             sourceName: issue.source_name,
             sourceUrl: issue.source_url
           }
@@ -82,24 +251,51 @@ export const searchIssues = async (req, res) => {
       savedIssues.push(dbIssue);
     }
 
-    // 6. Buat entri Audit Log pencarian
+    // 9. Cari isu lama terkait dari database untuk memperkaya hasil pengembalian
+    let matchingDbIssues = [];
+    if (query && query.trim().length > 0) {
+      matchingDbIssues = await prisma.ewsIssue.findMany({
+        where: {
+          OR: [
+            { title: { contains: query.trim(), mode: 'insensitive' } },
+            { description: { contains: query.trim(), mode: 'insensitive' } }
+          ],
+          createdAt: { gte: sevenDaysAgo }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+    }
+
+    // Gabungkan hasil baru/update dengan isu lama secara unik berdasarkan ID
+    const uniqueIssuesMap = new Map();
+    savedIssues.forEach(issue => uniqueIssuesMap.set(issue.id, issue));
+    matchingDbIssues.forEach(issue => {
+      if (!uniqueIssuesMap.has(issue.id)) {
+        uniqueIssuesMap.set(issue.id, issue);
+      }
+    });
+    
+    const finalResponseData = Array.from(uniqueIssuesMap.values());
+
+    // 10. Buat entri Audit Log pencarian
+    const logQuery = query || (req.files && req.files.length > 0 ? '[File Upload]' : '') || (links && links.length > 0 ? '[Link Referensi]' : '') || 'Umum';
     await prisma.auditLog.create({
       data: {
         userId: req.headers['x-user-id'] || 'KEPALA_BRIDA',
         actionType: 'SEARCH_ISSUES',
-        notes: `Melakukan pencarian isu EWS 7 hari terakhir dengan kata kunci: "${query}". Ditemukan ${savedIssues.length} isu potensial.`
+        notes: `Melakukan pencarian EWS dengan kueri: "${logQuery}". Menyimpan/menggabungkan ${savedIssues.length} isu potensial.`
       }
     });
 
     const displayMsg = filteredIssues.length > 0
-      ? `Pencarian selesai. Ditemukan ${savedIssues.length} isu potensial yang menyimpang dari baseline.`
-      : `Pencarian selesai. Tidak ada isu potensial yang menyimpang dari baseline.`;
+      ? `Pencarian selesai. Ditemukan ${savedIssues.length} isu potensial (baru/diperbarui) dari internet.`
+      : `Pencarian selesai. Tidak ada berita baru yang menyimpang dari baseline. Menampilkan data historis.`;
 
     return res.status(200).json({
       success: true,
       message: displayMsg,
       timeframe: '7 hari terakhir',
-      data: savedIssues
+      data: finalResponseData
     });
 
   } catch (error) {

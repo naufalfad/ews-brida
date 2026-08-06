@@ -17,16 +17,20 @@ class AiService {
    * @param {string} userQuery - Input kueri sederhana dari pengguna (misal: "solar", "lahan")
    * @returns {Promise<string>} - Kueri pencarian Google News yang dioptimalkan
    */
-  async expandSearchQuery(userQuery) {
-    if (!userQuery || userQuery.trim().length === 0) {
+  async expandSearchQuery(userQuery, fileText = '', linkText = '') {
+    const hasQuery = userQuery && userQuery.trim().length > 0;
+    const hasFiles = fileText && fileText.trim().length > 0;
+    const hasLinks = linkText && linkText.trim().length > 0;
+
+    if (!hasQuery && !hasFiles && !hasLinks) {
       return 'mimika';
     }
 
     const systemPrompt = `Anda adalah Asisten Analis EWS (Early Warning System) BRIDA Kabupaten Mimika.
-Tugas Anda adalah mengubah kueri pencarian sederhana dari user menjadi kueri pencarian berita Google News yang optimal untuk menemukan berita, isu, atau laporan di Kabupaten Mimika yang berpotensi memicu keributan, kepanikan, kecemasan, kekhawatiran, atau rasa tidak aman di masyarakat.
+Tugas Anda adalah mengubah input user (berupa kata kunci pencarian, isi teks dari beberapa file yang diunggah, dan/atau isi teks dari link referensi berita) menjadi kueri pencarian berita Google News yang optimal untuk menemukan berita, isu, atau laporan di Kabupaten Mimika yang berpotensi memicu keributan, kepanikan, kecemasan, kekhawatiran, atau rasa tidak aman di masyarakat.
 
 Aturan Pencarian EWS Mimika:
-Cari berita atau isu terkait kueri user dari wilayah Kabupaten Mimika / Kota Timika yang bersumber dari:
+Cari berita atau isu terkait topik dari wilayah Kabupaten Mimika / Kota Timika yang bersumber dari:
 1. Media Sosial/Laporan warga (seperti Instagram, X/Twitter, Facebook, TikTok, YouTube, Threads, dll).
 2. Berita Online (portal berita lokal atau nasional yang meliput Mimika).
 3. Isu liar/kasus hangat di masyarakat.
@@ -35,15 +39,27 @@ Cari berita atau isu terkait kueri user dari wilayah Kabupaten Mimika / Kota Tim
 
 Aturan Kueri:
 1. Kueri harus relevan dengan konteks wilayah Kabupaten Mimika atau Kota Timika.
-2. Tambahkan kata kunci sinonim, platform sumber, atau indikator keresahan sosial/emosi publik yang relevan dengan topik.
-3. Kueri akhir harus ringkas dan efektif untuk mesin pencari Google News.
-4. Hasil harus dalam format JSON dengan properti "search_query".`;
+2. Analisis seluruh konten masukan (teks kueri, dokumen file, dan link referensi), temukan topik permasalahan/konflik utama (seperti kelangkaan barang, penembakan, bentrokan, protes, dll), lalu rumuskan kueri pencarian Google News yang relevan.
+3. WAJIB menggunakan format ringkas pencarian Google dengan operator OR (contoh: "mimika (konflik OR bentrok OR demo OR penembakan)").
+4. DILARANG KERAS menghasilkan kueri berbentuk kalimat deskriptif panjang, penjelasan, atau dipisahkan tanda koma (contoh salah: "konflik di Mimika, demo di jalan, polres siaga"). Kueri harus berupa kata kunci ringkas (maksimal 5-8 kata kunci utama).
+5. Hasil harus dalam format JSON dengan properti "search_query".`;
 
-    const userPrompt = `Kueri sederhana user: "${userQuery}"`;
+    let userPrompt = '';
+    if (hasQuery) {
+      userPrompt += `Kueri/Kata Kunci User: "${userQuery}"\n\n`;
+    }
+    if (hasFiles) {
+      // Limit fileText size to prevent huge context window consumption
+      userPrompt += `Isi Konten File yang Diunggah:\n-------------------------\n${fileText.substring(0, 10000)}\n-------------------------\n\n`;
+    }
+    if (hasLinks) {
+      // Limit linkText size
+      userPrompt += `Isi Konten Link Referensi:\n-------------------------\n${linkText.substring(0, 10000)}\n-------------------------\n\n`;
+    }
 
     try {
       const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      console.log(`[Tahap 1 - Query Expansion] Memproses kueri "${userQuery}" menggunakan OpenAI (${modelName})...`);
+      console.log(`[Tahap 1 - Query Expansion] Memproses gabungan input untuk merumuskan kueri Google News menggunakan OpenAI (${modelName})...`);
 
       const completion = await this.openai.chat.completions.create({
         model: modelName,
@@ -61,7 +77,7 @@ Aturan Kueri:
               properties: {
                 search_query: {
                   type: 'string',
-                  description: 'Kueri pencarian Google News yang optimal.'
+                  description: 'Kueri pencarian Google News yang ringkas untuk wilayah Mimika/Timika.'
                 }
               },
               required: ['search_query'],
@@ -71,13 +87,14 @@ Aturan Kueri:
         }
       });
 
-      const result = JSON.parse(completion.choices[0].message.content);
-      console.log(`[Tahap 1 - Query Expansion] Hasil ekspansi kueri: "${result.search_query}"`);
-      return result.search_query;
+      const parsedResponse = JSON.parse(completion.choices[0].message.content);
+      const finalQuery = parsedResponse.search_query || 'mimika';
+      console.log(`[Tahap 1 - Query Expansion] Hasil kueri pencarian akhir: "${finalQuery}"`);
+      return finalQuery;
+
     } catch (error) {
-      console.error('[AiService] Gagal mengekspansi kueri:', error);
-      // Fallback aman jika terjadi kegagalan
-      return `mimika ${userQuery}`;
+      console.error('[AiService] Gagal mengekspansi kueri pencarian:', error);
+      return `mimika ${userQuery || ''}`.trim();
     }
   }
 
@@ -87,9 +104,11 @@ Aturan Kueri:
    * dan memiliki potensi menimbulkan kepanikan, kecemasan, rasa tidak aman, atau konflik sosial.
    * @param {Array} articles - Artikel mentah dari Google News
    * @param {Array} baselines - Baseline acuan normal dari database
+   * @param {string} [userQuery=''] - Kueri pencarian asli dari user untuk menjaga relevansi topik
+   * @param {Array} activeDbIssues - Isu-isu yang sedang aktif di database
    * @returns {Promise<Array>} - Daftar Isu EWS Draf yang teridentifikasi
    */
-  async filterIssuesAgainstBaselines(articles, baselines) {
+  async filterIssuesAgainstBaselines(articles, baselines, userQuery = '', activeDbIssues = []) {
     if (!articles || articles.length === 0) {
       return [];
     }
@@ -109,6 +128,18 @@ Aturan Kueri:
 - Ringkasan: ${a.content}`;
     }).join('\n\n');
 
+    const formattedDbIssues = activeDbIssues && activeDbIssues.length > 0
+      ? activeDbIssues.map((issue, idx) => {
+          return `Isu Database ${idx + 1}:
+- Judul: ${issue.title}
+- Deskripsi: ${issue.description}`;
+        }).join('\n\n')
+      : 'Tidak ada isu yang aktif di database saat ini.';
+
+    const rule1 = userQuery && userQuery.trim().length > 0
+      ? `1. RELEVANSI TOPIK USER: Anda WAJIB memastikan bahwa seluruh isu yang diloloskan memiliki relevansi/hubungan langsung dengan topik pencarian user: "${userQuery}". Jika artikel berita tidak membahas topik "${userQuery}" sebagai fokus utama (misalnya hanya menyebutkan kata kunci tersebut sepintas dalam satu kalimat tetapi fokus berita adalah hal lain seperti unjuk rasa politik KNPB atau kriminalitas umum), maka artikel tersebut harus DIABAIKAN.`
+      : '1. Temukan artikel yang melaporkan kejadian yang menyimpang/anomali dari baseline kondisi normal tersebut.';
+
     const systemPrompt = `Anda adalah Asisten Analis EWS (Early Warning System) BRIDA Kabupaten Mimika.
 Tugas Anda adalah menyaring artikel-artikel berita terkini di Kabupaten Mimika dan membandingkannya dengan Baseline Kondisi Normal di bawah ini.
 
@@ -121,17 +152,22 @@ Definisi "Kerusuhan & Keresahan" EWS Mimika:
 Kerusuhan tidak hanya mencakup perusakan fisik atau tindakan arogansi kelompok/individu, tetapi juga mencakup kepanikan, kecemasan, kekhawatiran, serta rasa tidak aman/tidak nyaman yang timbul di tengah masyarakat akibat isu atau kejadian yang beredar.
 
 Aturan Penyaringan & Pengelompokan:
-1. Temukan artikel yang melaporkan kejadian yang menyimpang/anomali dari baseline kondisi normal tersebut.
+${rule1}
 2. Penyimpangan tersebut HANYA diloloskan jika berpotensi memicu "Kerusuhan & Keresahan" di kalangan masyarakat Mimika sesuai definisi di atas.
-3. PISAHKAN TOPIK / KEJADIAN YANG BERBEDA: Jangan menggabungkan kejadian atau topik yang berbeda (misalnya: demonstrasi politik/KNPB tidak boleh digabungkan dengan peristiwa pembunuhan/penembakan kriminal, atau masalah sengketa lahan, atau antrean BBM). Setiap topik kejadian yang berdiri sendiri harus dilaporkan sebagai entri isu terpisah agar output bersifat dinamis.
-4. GABUNGKAN HANYA BERITA SEJENIS (TRIANGULASI): Jika terdapat beberapa artikel yang membahas satu kejadian/isu yang sama persis, gabungkan menjadi SATU entri isu:
+3. PISAHKAN TOPIK / KEJADIAN YANG BERBEDA: Jangan menggabungkan kejadian atau topik yang berbeda (misalnya: demonstrasi politik/KNPB tidak boleh digabungkan dengan peristiwa pembunuhan/penembakan kriminal, atau sengketa lahan, atau antrean BBM). Setiap topik kejadian yang berdiri sendiri harus dilaporkan sebagai entri isu terpisah agar output bersifat dinamis.
+4. GABUNGKAN HANYA BERITA SEJENIS (TRIANGULASI): Jika terdapat beberapa artikel baru yang membahas satu kejadian/isu yang sama persis, gabungkan menjadi SATU entri isu:
    - Tentukan judul isu yang netral dan komprehensif.
    - Gabungkan ringkasan isi kejadiannya.
    - Ambil artikel pertama/paling representatif sebagai sumber utama (source_name dan source_url).
    - Kumpulkan seluruh artikel pendukung (termasuk yang utama) ke dalam array "sources" yang berisi objek {source_name, url, published_age}. Tentukan "published_age" sesuai data umur artikel masukan.
    - Pada deskripsi isu, sertakan informasi waktu publikasi relatif (contoh: "... [Diterbitkan 3 hari yang lalu]" atau jika triangulasi gabungan beberapa hari berbeda: "... [Diterbitkan antara 1 s.d. 5 hari yang lalu]").
 5. Laporkan setiap peristiwa kejahatan kekerasan penting (seperti penembakan oleh aparat, pembunuhan, atau tindakan main hakim sendiri) sebagai deviasi keamanan EWS karena peristiwa semacam ini di Mimika sangat rentan memicu aksi balasan atau keresahan sosial.
-6. Jika tidak ada artikel berita yang menyimpang dari baseline atau berpotensi memicu kecemasan/keresahan warga, kembalikan array "issues" kosong [].`;
+6. Jika tidak ada artikel berita yang menyimpang dari baseline atau berpotensi memicu kecemasan/keresahan warga, kembalikan array "issues" kosong [].
+7. DEDUPLIKASI SEMANTIK TERHADAP DATABASE: Bandingkan berita-berita baru di bawah dengan daftar isu yang sudah tersimpan di database berikut:
+=========================================
+${formattedDbIssues}
+=========================================
+Jika berita baru memberitakan peristiwa/kejadian yang sama persis dengan salah satu isu di database di atas, JANGAN buat isu baru. Buat laporan di array "issues" dengan judul ("title") yang PERSIS SAMA dengan judul isu di database tersebut, agar backend kami dapat mendeteksi dan menggabungkan sumber beritanya secara akumulatif.`;
 
     const userPrompt = `Daftar artikel berita untuk dianalisis:
 =========================================
