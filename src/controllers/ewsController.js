@@ -461,13 +461,40 @@ export const analyzeIssue = async (req, res) => {
     // 3. Panggil AI Service untuk analisis mendalam
     const analysisResult = await aiService.analyzeDeepImpact(id);
 
+    // 3.b. Coba mencocokkan target_district dari AI ke tabel MasterDistrict
+    let matchedDistrictId = null;
+    let fallbackDistrictName = analysisResult.target_district;
+    
+    if (fallbackDistrictName) {
+      // Membersihkan teks, mencari kemiripan (misal "Kecamatan Wania" -> "Wania")
+      const allDistricts = await prisma.masterDistrict.findMany();
+      
+      const cleanTarget = fallbackDistrictName.toLowerCase()
+        .replace(/kabupaten/g, '')
+        .replace(/kecamatan/g, '')
+        .replace(/distrik/g, '')
+        .replace(/kota/g, '')
+        .trim();
+
+      const match = allDistricts.find(d => 
+        cleanTarget.includes(d.name.toLowerCase()) || 
+        d.name.toLowerCase().includes(cleanTarget)
+      );
+      
+      if (match) {
+        matchedDistrictId = match.id;
+        fallbackDistrictName = match.name; // Normalisasi ke nama standar
+      }
+    }
+
     // 4. Update data isu di database
     const updatedIssue = await prisma.ewsIssue.update({
       where: { id },
       data: {
         riskLevel: analysisResult.risk_level,
         primaryCategory: analysisResult.primary_category,
-        targetDistrict: analysisResult.target_district,
+        targetDistrict: fallbackDistrictName, // Simpan teks asli atau nama yang sudah dinormalisasi
+        districtId: matchedDistrictId, // Relasi ke MasterDistrict (Bisa null jika AI keliru)
         analysisSummary: analysisResult.analysis_summary,
         predictedImpact: analysisResult.predicted_impact,
         status: 'ANALYZED'
@@ -495,6 +522,60 @@ export const analyzeIssue = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Gagal memproses analisis mendalam dampak isu.',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * TAHAP 3.5: Validasi Geografis (Human-in-the-Loop)
+ * PUT /api/v1/ews/issues/:id/district
+ */
+export const updateIssueDistrict = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { districtId } = req.body;
+
+    const issue = await prisma.ewsIssue.findUnique({ where: { id } });
+    if (!issue) {
+      return res.status(404).json({ success: false, message: `Isu ID ${id} tidak ditemukan.` });
+    }
+
+    const district = await prisma.masterDistrict.findUnique({ where: { id: districtId } });
+    if (!district) {
+      return res.status(404).json({ success: false, message: `Distrik ID ${districtId} tidak ditemukan.` });
+    }
+
+    const updatedIssue = await prisma.ewsIssue.update({
+      where: { id },
+      data: {
+        districtId: district.id,
+        targetDistrict: district.name
+      },
+      include: {
+        District: true
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.headers['x-user-id'] || 'KEPALA_BRIDA',
+        actionType: 'UPDATE_DISTRICT',
+        issueId: id,
+        notes: `Mengoreksi lokasi isu ke distrik "${district.name}".`
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Lokasi distrik berhasil diperbarui.',
+      data: updatedIssue
+    });
+  } catch (error) {
+    console.error('Error in updateIssueDistrict controller:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal memperbarui lokasi distrik.',
       error: error.message
     });
   }
@@ -807,3 +888,133 @@ export const printReportPdf = async (req, res) => {
   }
 };
 
+/**
+ * TAHAP Tambahan: Ambil data agregasi untuk Dashboard
+ * GET /api/v1/ews/dashboard-summary
+ */
+export const getDashboardSummary = async (req, res) => {
+  try {
+    // 1. Dapatkan agregasi jumlah issue
+    const totalIssues = await prisma.ewsIssue.count();
+    const criticalIssues = await prisma.ewsIssue.count({
+      where: { riskLevel: 'KRITIS/MERAH' }
+    });
+    const hoaxIssues = await prisma.ewsIssue.count({
+      where: { isHoax: true }
+    });
+    const generatedReports = await prisma.ewsReport.count();
+
+    // 2. Dapatkan isu-isu terbaru untuk ticker
+    const recentIssues = await prisma.ewsIssue.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: {
+        id: true,
+        title: true,
+        sourceName: true,
+        riskLevel: true,
+        status: true,
+        createdAt: true
+      }
+    });
+
+    // 3. Distribusi risiko (group by riskLevel)
+    const riskGroups = await prisma.ewsIssue.groupBy({
+      by: ['riskLevel'],
+      _count: { riskLevel: true }
+    });
+    
+    // Normalisasi distribusi risiko
+    const riskDistribution = {
+      AMAN: 0,
+      WASPADA: 0,
+      'KRITIS/MERAH': 0,
+      UNKNOWN: 0
+    };
+    riskGroups.forEach(group => {
+      if (group.riskLevel === 'AMAN') riskDistribution.AMAN = group._count.riskLevel;
+      else if (group.riskLevel === 'WASPADA') riskDistribution.WASPADA = group._count.riskLevel;
+      else if (group.riskLevel === 'KRITIS/MERAH') riskDistribution['KRITIS/MERAH'] = group._count.riskLevel;
+      else riskDistribution.UNKNOWN += group._count.riskLevel;
+    });
+
+    // 4. Fokus Mitigasi Kritis (Ambil isu paling kritis & terbaru)
+    const criticalFocus = await prisma.ewsIssue.findFirst({
+      where: { riskLevel: 'KRITIS/MERAH' },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // 5. Laporan Terbaru
+    const recentReports = await prisma.ewsReport.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalIssues,
+          criticalIssues,
+          hoaxIssues,
+          generatedReports
+        },
+        recentIssues,
+        riskDistribution,
+        criticalFocus,
+        recentReports
+      }
+    });
+
+  } catch (error) {
+    console.error('[EwsController] Gagal mengambil data dashboard:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengambil data dashboard.',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET /api/v1/ews/gis-issues
+ * Mengambil isu-isu yang sudah terverifikasi (bukan hoax) dan telah dianalisis
+ * untuk ditampilkan di Peta GIS.
+ */
+export const getGisIssues = async (req, res) => {
+  try {
+    const gisIssues = await prisma.ewsIssue.findMany({
+      where: {
+        status: {
+          in: ['VERIFIED_CREDIBLE', 'ANALYZED', 'MITIGATED', 'REPORTED']
+        },
+        isHoax: false,
+        districtId: {
+          not: null
+        }
+      },
+      include: {
+        District: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Sesuaikan mapping nama variabel ke standard frontend EWS
+    const formattedIssues = gisIssues.map(issue => ({
+      ...issue,
+      districtName: issue.District ? issue.District.name : issue.targetDistrict || 'Mimika Baru'
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: formattedIssues
+    });
+  } catch (error) {
+    console.error('[EwsController] Gagal mengambil GIS issues:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengambil data GIS.',
+      error: error.message
+    });
+  }
+};

@@ -164,27 +164,32 @@ class PdfService {
     doc.fontSize(10).font('Helvetica-Bold').text('METADATA ISU RUJUKAN:', 54);
     doc.moveDown(0.5);
     
-    doc.font('Helvetica-Bold').text('Tanggal Cetak', 54);
-    doc.font('Helvetica').text(`: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} WIT`, 160);
+    const startY1 = doc.y;
+    doc.font('Helvetica-Bold').text('Tanggal Cetak', 54, startY1);
+    doc.font('Helvetica').text(`: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} WIT`, 160, startY1);
     doc.moveDown(0.4);
 
-    doc.font('Helvetica-Bold').text('Penyusun Laporan', 54);
-    doc.font('Helvetica').text(`: ${report.author}`, 160);
+    const startY2 = doc.y;
+    doc.font('Helvetica-Bold').text('Penyusun Laporan', 54, startY2);
+    doc.font('Helvetica').text(`: ${report.author}`, 160, startY2);
     doc.moveDown(0.4);
 
-    doc.font('Helvetica-Bold').text('Isu Rujukan', 54);
-    doc.font('Helvetica').text(`: ${report.Issue?.title || 'Isu Tidak Ditemukan'}`, 160);
+    const startY3 = doc.y;
+    doc.font('Helvetica-Bold').text('Isu Rujukan', 54, startY3);
+    doc.font('Helvetica').text(`: ${report.Issue?.title || 'Isu Tidak Ditemukan'}`, 160, startY3);
     doc.moveDown(0.4);
 
-    doc.font('Helvetica-Bold').text('Kategori / Wilayah', 54);
-    doc.font('Helvetica').text(`: ${report.Issue?.primaryCategory || '-'} / Distrik ${report.Issue?.targetDistrict || '-'}`, 160);
+    const startY4 = doc.y;
+    doc.font('Helvetica-Bold').text('Kategori / Wilayah', 54, startY4);
+    doc.font('Helvetica').text(`: ${report.Issue?.primaryCategory || '-'} / Distrik ${report.Issue?.targetDistrict || '-'}`, 160, startY4);
     
     doc.moveDown(1.5);
     doc.lineWidth(1).moveTo(54, doc.y).lineTo(540, doc.y).stroke();
     doc.moveDown(1.5);
 
     // Report Content (split by newlines to print paragraph by paragraph)
-    doc.fontSize(11).font('Helvetica-Bold').text('ISI LAPORAN KEWASPADAAN DINI:');
+    doc.x = 54;
+    doc.fontSize(11).font('Helvetica-Bold').text('ISI LAPORAN KEWASPADAAN DINI:', 54, doc.y);
     doc.moveDown(0.5);
 
     const paragraphs = report.content.split('\n');
@@ -196,10 +201,10 @@ class PdfService {
         // Check if paragraph is a heading/bullet or general paragraph
         if (cleanPara.startsWith('I.') || cleanPara.startsWith('II.') || cleanPara.startsWith('III.') || cleanPara.startsWith('IV.') || cleanPara.startsWith('V.')) {
           doc.moveDown(0.5);
-          doc.fontSize(10).font('Helvetica-Bold').text(cleanPara, { lineGap: 3 });
+          doc.fontSize(10).font('Helvetica-Bold').text(cleanPara, 54, doc.y, { lineGap: 3 });
           doc.moveDown(0.2);
         } else {
-          doc.fontSize(10).font('Helvetica').text(cleanPara, {
+          doc.fontSize(10).font('Helvetica').text(cleanPara, 54, doc.y, {
             align: 'justify',
             lineGap: 3
           });

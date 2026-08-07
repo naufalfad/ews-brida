@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import ewsRoutes from './routes/ewsRoutes.js';
+import districtRoutes from './routes/districtRoutes.js';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.get('/health', (req, res) => {
 
 // EWS Router Binding
 app.use('/api/v1/ews', ewsRoutes);
+app.use('/api/v1/ews/districts', districtRoutes);
 
 // 404 Route handler
 app.use((req, res, next) => {

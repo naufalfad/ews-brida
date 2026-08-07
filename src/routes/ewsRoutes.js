@@ -9,7 +9,10 @@ import {
   saveReport,
   getReports,
   getReportByIssue,
-  printReportPdf
+  printReportPdf,
+  getDashboardSummary,
+  getGisIssues,
+  updateIssueDistrict
 } from '../controllers/ewsController.js';
 import {
   upload,
@@ -24,11 +27,17 @@ const router = Router();
 // TAHAP 1: PENCARIAN & PENYARINGAN ISU EWS
 // ==========================================
 
+// Ambil Ringkasan Dashboard
+router.get('/dashboard-summary', getDashboardSummary);
+
 // Cari isu terbaru di Mimika yang berpotensi kerusuhan/kecemasan berdasarkan baseline
 router.post('/search-issues', upload.array('files', 5), searchIssues);
 
 // Ambil riwayat isu EWS yang ditemukan
 router.get('/issues', getIssues);
+
+// Ambil isu terverifikasi untuk Peta GIS
+router.get('/gis-issues', getGisIssues);
 
 // ==========================================
 // TAHAP 2: EVALUASI KREDIBILAS & CEK HOAX
@@ -43,6 +52,9 @@ router.post('/issues/:id/verify', verifyIssue);
 
 // Analisis mendalam dampak isu EWS terpilih (berstatus VERIFIED_CREDIBLE)
 router.post('/issues/:id/analyze', analyzeIssue);
+
+// Koreksi validasi geografis manual (Human-in-the-Loop)
+router.put('/issues/:id/district', updateIssueDistrict);
 
 // ==========================================
 // TAHAP 4: MITIGASI & REKOMENDASI OPD
